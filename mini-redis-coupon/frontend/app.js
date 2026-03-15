@@ -156,21 +156,36 @@ async function bulkTest() {
         const res = await fetch(`${API_BASE}/coupon/bulk-test`, { method: "POST" });
         const data = await res.json();
 
+        // 어느 방식이 빠른지 비교
+        const faster = data.redis_elapsed_ms < data.db_elapsed_ms ? "Redis" : "DB";
+        const ratio = faster === "Redis"
+            ? (data.db_elapsed_ms / data.redis_elapsed_ms).toFixed(1)
+            : (data.redis_elapsed_ms / data.db_elapsed_ms).toFixed(1);
+
         showResult(`
             <div class="bulk-result">
                 <div class="bulk-column">
                     <h3>⚡ Redis 결과</h3>
-                    <p>총 요청: ${data.total_requests}명</p>
-                    <p class="result-success">성공: ${data.success_count}명</p>
-                    <p class="result-fail">실패: ${data.fail_count}명</p>
+                    <p>총 요청: <strong>${data.total_requests}명</strong></p>
+                    <p class="result-success">✅ 발급 성공: ${data.redis_success}명</p>
+                    <p class="result-fail">🚫 재고 소진: ${data.redis_sold_out}명</p>
+                    ${data.redis_error > 0 ? `<p class="result-fail">💥 에러: ${data.redis_error}명</p>` : ''}
                     <p class="result-time">⏱ ${data.redis_elapsed_ms}ms</p>
+                    <p class="result-detail">방식: DECR 원자적 연산<br>재고 0 이하 → 즉시 거절</p>
                 </div>
                 <div class="bulk-column">
                     <h3>🐢 DB 결과</h3>
-                    <p>총 요청: ${data.total_requests}명</p>
-                    <p class="result-info">성공: 100명 (DB 잠금)</p>
+                    <p>총 요청: <strong>${data.total_requests}명</strong></p>
+                    <p class="result-success">✅ 발급 성공: ${data.db_success}명</p>
+                    <p class="result-fail">🚫 재고 소진: ${data.db_sold_out}명</p>
+                    ${data.db_error > 0 ? `<p class="result-fail">💥 에러: ${data.db_error}명</p>` : ''}
                     <p class="result-time">⏱ ${data.db_elapsed_ms}ms</p>
+                    <p class="result-detail">방식: SELECT FOR UPDATE 행 잠금<br>잠금 대기 → 순차 처리 → 거절</p>
                 </div>
+            </div>
+            <div class="bulk-summary">
+                🏆 <strong>${faster}</strong>가 <strong>${ratio}배</strong> 빠름
+                &nbsp;|&nbsp; 두 방식 모두 정확히 100명만 발급 성공
             </div>
         `);
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -16,46 +17,40 @@ from datetime import datetime
 from typing import Optional
 
 import asyncpg
-import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# Mini Redis를 같은 프로세스에서 직접 사용 (HTTP 오버헤드 제거)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "mini-redis"))
+from server import MiniRedisStore
+
 # 환경 변수 로드
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://pkw:pkw@localhost:5432/mini_redis_db")
-MINI_REDIS_URL = os.getenv("MINI_REDIS_URL", "http://localhost:6379")
 
-# 전역 DB 풀과 HTTP 클라이언트
+# 전역 DB 풀과 Mini Redis 인스턴스
 db_pool: Optional[asyncpg.Pool] = None
-http_client: Optional[httpx.AsyncClient] = None
+redis_store = MiniRedisStore()  # 인메모리 직접 호출 (HTTP 없음)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """앱 시작/종료 시 리소스 관리"""
-    global db_pool, http_client
+    global db_pool
     # DB 연결 풀 생성
     db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=5, max_size=20)
-    # Mini Redis 통신용 HTTP 클라이언트
-    http_client = httpx.AsyncClient(base_url=MINI_REDIS_URL, timeout=10.0)
 
     # Mini Redis에 쿠폰 재고 초기화 (없으면 설정)
-    try:
-        resp = await http_client.get("/get/coupon_stock")
-        data = resp.json()
-        if data.get("data") is None:
-            await http_client.post("/set", json={"key": "coupon_stock", "value": "100"})
-    except Exception:
-        pass  # Mini Redis가 아직 시작되지 않았을 수 있음
+    value = await redis_store.get("coupon_stock")
+    if value is None:
+        await redis_store.set("coupon_stock", "100")
 
     yield
 
     # 리소스 정리
-    if http_client:
-        await http_client.aclose()
     if db_pool:
         await db_pool.close()
 
@@ -93,35 +88,38 @@ class CountResponse(BaseModel):
 class BulkTestResponse(BaseModel):
     """동시 테스트 응답"""
     total_requests: int
-    success_count: int
-    fail_count: int
+    # Redis 결과 상세
+    redis_success: int = 0       # 발급 성공 수
+    redis_sold_out: int = 0      # 재고 소진으로 거절된 수
+    redis_error: int = 0         # 서버 에러 수
     redis_elapsed_ms: float = 0
+    # DB 결과 상세
+    db_success: int = 0          # 발급 성공 수
+    db_sold_out: int = 0         # 재고 소진으로 거절된 수 (잠금 대기 후 거절)
+    db_error: int = 0            # 서버 에러 수
     db_elapsed_ms: float = 0
 
 
-# --- Mini Redis 헬퍼 함수 ---
+# --- Mini Redis 헬퍼 함수 (인메모리 직접 호출) ---
 
 async def redis_get(key: str) -> Optional[str]:
-    """Mini Redis에서 값 조회"""
-    resp = await http_client.get(f"/get/{key}")
-    return resp.json().get("data")
+    """Mini Redis에서 값 조회 (직접 호출)"""
+    return await redis_store.get(key)
 
 
 async def redis_set(key: str, value: str):
-    """Mini Redis에 값 저장"""
-    await http_client.post("/set", json={"key": key, "value": value})
+    """Mini Redis에 값 저장 (직접 호출)"""
+    await redis_store.set(key, value)
 
 
 async def redis_decr(key: str) -> int:
-    """Mini Redis에서 값 감소"""
-    resp = await http_client.post(f"/decr/{key}")
-    return resp.json().get("data")
+    """Mini Redis에서 값 감소 (직접 호출, 원자적 연산)"""
+    return await redis_store.decr(key)
 
 
 async def redis_incr(key: str) -> int:
-    """Mini Redis에서 값 증가"""
-    resp = await http_client.post(f"/incr/{key}")
-    return resp.json().get("data")
+    """Mini Redis에서 값 증가 (직접 호출, 원자적 연산)"""
+    return await redis_store.incr(key)
 
 
 # --- API 엔드포인트 ---
@@ -294,26 +292,25 @@ async def bulk_test() -> BulkTestResponse:
         pass
 
     # --- Redis 방식 테스트 ---
-    redis_success = 0
-    redis_fail = 0
+    r_success = 0    # 쿠폰 발급 성공
+    r_sold_out = 0   # 재고 소진으로 거절
+    r_error = 0      # 서버 에러
 
     async def redis_request():
-        nonlocal redis_success, redis_fail
+        nonlocal r_success, r_sold_out, r_error
         try:
             result = await issue_coupon_redis()
             if result.success:
-                redis_success += 1
+                r_success += 1
             else:
-                redis_fail += 1
+                r_sold_out += 1  # 재고 소진 = 정상 거절
         except Exception:
-            redis_fail += 1
+            r_error += 1  # 예외 발생 = 서버 에러
 
     redis_start = time.perf_counter()
     # 동시에 1000개 요청 실행
     await asyncio.gather(*[redis_request() for _ in range(total)])
     redis_elapsed = (time.perf_counter() - redis_start) * 1000
-
-    redis_total_success = redis_success
 
     # 재고 다시 초기화 (DB 테스트용)
     try:
@@ -324,19 +321,20 @@ async def bulk_test() -> BulkTestResponse:
         pass
 
     # --- DB 방식 테스트 ---
-    db_success = 0
-    db_fail = 0
+    d_success = 0    # 쿠폰 발급 성공
+    d_sold_out = 0   # 잠금 대기 후 재고 소진으로 거절
+    d_error = 0      # 서버 에러
 
     async def db_request():
-        nonlocal db_success, db_fail
+        nonlocal d_success, d_sold_out, d_error
         try:
             result = await issue_coupon_db()
             if result.success:
-                db_success += 1
+                d_success += 1
             else:
-                db_fail += 1
+                d_sold_out += 1  # FOR UPDATE 대기 후 재고 0 확인 → 거절
         except Exception:
-            db_fail += 1
+            d_error += 1  # 예외 발생 = 서버 에러
 
     db_start = time.perf_counter()
     await asyncio.gather(*[db_request() for _ in range(total)])
@@ -344,9 +342,13 @@ async def bulk_test() -> BulkTestResponse:
 
     return BulkTestResponse(
         total_requests=total,
-        success_count=redis_total_success,
-        fail_count=total - redis_total_success,
+        redis_success=r_success,
+        redis_sold_out=r_sold_out,
+        redis_error=r_error,
         redis_elapsed_ms=round(redis_elapsed, 2),
+        db_success=d_success,
+        db_sold_out=d_sold_out,
+        db_error=d_error,
         db_elapsed_ms=round(db_elapsed, 2),
     )
 

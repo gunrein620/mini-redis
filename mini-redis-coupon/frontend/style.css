@@ -180,6 +180,28 @@ section h2 {
     margin-bottom: 0.25rem;
 }
 
+/* 동시성 제어 방식 설명 */
+.result-detail {
+    color: #94a3b8;
+    font-size: 0.78rem;
+    margin-top: 0.5rem;
+    line-height: 1.5;
+    border-top: 1px solid #334155;
+    padding-top: 0.5rem;
+}
+
+/* 비교 요약 바 */
+.bulk-summary {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    background: #1a2332;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 0.95rem;
+    color: #fbbf24;
+}
+
 /* 로그 영역 */
 .log-count {
     font-size: 0.8rem;
