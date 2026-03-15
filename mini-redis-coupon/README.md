@@ -46,6 +46,12 @@ psql -U pkw -d mini_redis_db -f database/init.sql
 psql -U pkw -d mini_redis_db -f database/seed.sql
 ```
 
+## 서버 실행 한번에 하기(터미널 1개)
+```bash
+cd mini-redis-coupon
+./start.sh
+```
+
 ## 서버 실행 방법 (터미널 3개)
 
 ### 터미널 1: Mini Redis 서버 (포트 6379)
