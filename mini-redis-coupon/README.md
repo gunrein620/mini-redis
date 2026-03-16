@@ -118,3 +118,65 @@ pytest -v
 ### 1000명 동시 테스트
 - asyncio.gather로 1000개 비동기 요청을 동시 실행
 - Redis 방식과 DB 방식의 처리 시간을 비교
+
+---
+
+## 환경 설정 가이드
+
+### 필수 환경
+
+| 항목 | 버전 | 비고 |
+|------|------|------|
+| Python | 3.9 이상 (3.11 권장) | `python3 --version`으로 확인 |
+| pip | 최신 | `pip install --upgrade pip` |
+| PostgreSQL | 14 이상 | `psql --version`으로 확인 |
+
+### 의존성 설치 (한번에)
+
+```bash
+cd mini-redis-coupon
+pip install -r requirements.txt
+```
+
+설치되는 패키지 목록:
+
+| 패키지 | 용도 |
+|--------|------|
+| fastapi | 웹 프레임워크 (Backend + Mini Redis) |
+| uvicorn | ASGI 서버 |
+| pydantic | 데이터 검증 |
+| asyncpg | PostgreSQL 비동기 드라이버 |
+| httpx | HTTP 클라이언트 (테스트용) |
+| python-dotenv | `.env` 파일 로드 |
+| pytest | 테스트 프레임워크 |
+| pytest-asyncio | 비동기 테스트 지원 |
+
+### PostgreSQL 설정
+
+```bash
+# 1. PostgreSQL 실행 확인
+pg_isready
+
+# 2. 사용자 생성 (필요 시)
+createuser -s pkw
+
+# 3. 데이터베이스 생성
+createdb -U pkw mini_redis_db
+
+# 4. 테이블 생성
+psql -U pkw -d mini_redis_db -f database/init.sql
+
+# 5. 초기 데이터 삽입 (쿠폰 재고 100개)
+psql -U pkw -d mini_redis_db -f database/seed.sql
+```
+
+### 환경변수 (.env)
+
+`backend/.env` 파일에 DB 접속 정보가 설정되어 있습니다:
+
+```
+DATABASE_URL=postgresql://pkw:pkw@localhost:5432/mini_redis_db
+MINI_REDIS_URL=http://localhost:6379
+```
+
+자신의 PostgreSQL 설정에 맞게 유저명/비밀번호를 수정하세요.

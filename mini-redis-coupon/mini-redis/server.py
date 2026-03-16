@@ -2,9 +2,16 @@
 Mini Redis 서버
 - Python으로 직접 구현한 해시 테이블 기반 키-값 저장소
 - TTL 지원 (만료된 키 자동 삭제)
-- GET / SET / DELETE / INCR / DECR API 제공
 - FastAPI HTTP 서버 (포트 6379)
 - asyncio.Lock()으로 동시성 제어
+
+API 엔드포인트:
+  GET    /get/{key}     - 키 조회
+  POST   /set           - 키-값 저장 (JSON body: key, value, ttl?)
+  DELETE /delete/{key}  - 키 삭제
+  POST   /incr/{key}    - 값 1 증가 (원자적)
+  POST   /decr/{key}    - 값 1 감소 (원자적)
+  GET    /health        - 헬스 체크
 """
 
 from __future__ import annotations
@@ -149,7 +156,10 @@ class RedisResponse(BaseModel):
 
 @app.get("/get/{key}", summary="GET - 키 조회")
 async def api_get(key: str) -> RedisResponse:
-    """키에 해당하는 값을 조회"""
+    """GET /get/{key} - 키에 해당하는 값을 조회
+
+    키가 존재하지 않거나 TTL 만료 시 data=None 반환
+    """
     value = await store.get(key)
     if value is None:
         return RedisResponse(success=True, data=None, message="키가 존재하지 않습니다")
@@ -158,14 +168,21 @@ async def api_get(key: str) -> RedisResponse:
 
 @app.post("/set", summary="SET - 키-값 저장")
 async def api_set(req: SetRequest) -> RedisResponse:
-    """키-값 쌍을 저장"""
+    """POST /set - 키-값 쌍을 저장
+
+    요청 body: {"key": str, "value": str, "ttl": int (선택, 초 단위)}
+    TTL 설정 시 해당 시간 후 자동 만료
+    """
     result = await store.set(req.key, req.value, req.ttl)
     return RedisResponse(success=True, data=result, message=f"'{req.key}' 저장 완료")
 
 
 @app.delete("/delete/{key}", summary="DELETE - 키 삭제")
 async def api_delete(key: str) -> RedisResponse:
-    """키를 삭제"""
+    """DELETE /delete/{key} - 키를 삭제
+
+    삭제 성공 시 data=1, 키가 없으면 data=0 반환
+    """
     count = await store.delete(key)
     if count == 0:
         return RedisResponse(success=True, data=0, message="삭제할 키가 없습니다")
@@ -174,7 +191,10 @@ async def api_delete(key: str) -> RedisResponse:
 
 @app.post("/incr/{key}", summary="INCR - 값 1 증가")
 async def api_incr(key: str) -> RedisResponse:
-    """키의 값을 1 증가"""
+    """POST /incr/{key} - 키의 값을 1 증가 (원자적 연산)
+
+    키가 없으면 0에서 시작. 값이 정수가 아니면 400 에러
+    """
     try:
         new_value = await store.incr(key)
         return RedisResponse(success=True, data=new_value)
@@ -184,7 +204,10 @@ async def api_incr(key: str) -> RedisResponse:
 
 @app.post("/decr/{key}", summary="DECR - 값 1 감소")
 async def api_decr(key: str) -> RedisResponse:
-    """키의 값을 1 감소"""
+    """POST /decr/{key} - 키의 값을 1 감소 (원자적 연산)
+
+    키가 없으면 0에서 시작. 값이 정수가 아니면 400 에러
+    """
     try:
         new_value = await store.decr(key)
         return RedisResponse(success=True, data=new_value)
@@ -194,7 +217,7 @@ async def api_decr(key: str) -> RedisResponse:
 
 @app.get("/health", summary="헬스 체크")
 async def health():
-    """서버 상태 확인"""
+    """GET /health - 서버 상태 확인"""
     return {"status": "ok", "service": "mini-redis"}
 
 

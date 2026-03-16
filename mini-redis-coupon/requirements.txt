@@ -1,0 +1,20 @@
+# Mini Redis Coupon 프로젝트 통합 의존성
+# pip install -r requirements.txt
+
+# --- 웹 프레임워크 ---
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.0.0
+
+# --- 데이터베이스 (PostgreSQL) ---
+asyncpg>=0.29.0
+
+# --- HTTP 클라이언트 ---
+httpx>=0.25.0
+
+# --- 환경변수 ---
+python-dotenv>=1.0.0
+
+# --- 테스트 ---
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
