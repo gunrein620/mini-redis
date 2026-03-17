@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>선착순 쿠폰 이벤트</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 헤더 -->
+        <header>
+            <h1>🎟️ 선착순 쿠폰 이벤트</h1>
+            <p class="subtitle">Mini Redis vs PostgreSQL 성능 비교</p>
+        </header>
+
+        <!-- 재고 현황 -->
+        <section class="stock-section">
+            <h2>남은 쿠폰 수량</h2>
+            <div class="stock-display">
+                <div class="stock-card">
+                    <span class="stock-label">Redis 재고</span>
+                    <span class="stock-value" id="redis-count">-</span>
+                </div>
+                <div class="stock-card">
+                    <span class="stock-label">DB 재고</span>
+                    <span class="stock-value" id="db-count">-</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 액션 버튼 -->
+        <section class="action-section">
+            <button class="btn btn-redis" id="btn-redis" onclick="issueCouponRedis()">
+                ⚡ Redis로 발급
+            </button>
+            <button class="btn btn-db" id="btn-db" onclick="issueCouponDB()">
+                🐢 DB로 발급
+            </button>
+            <button class="btn btn-bulk" id="btn-bulk" onclick="bulkTest()">
+                🚀 1000명 동시 테스트
+            </button>
+            <button class="btn btn-reset" id="btn-reset" onclick="resetCoupon()">
+                🔄 재고 초기화
+            </button>
+        </section>
+
+        <!-- 결과 표시 -->
+        <section class="result-section">
+            <h2>결과</h2>
+            <div class="result-box" id="result-box">
+                <p class="placeholder">버튼을 클릭하여 테스트해보세요</p>
+            </div>
+        </section>
+
+        <!-- 로그 영역 -->
+        <section class="log-section">
+            <h2>요청 기록 <span class="log-count" id="log-count">(0/10)</span></h2>
+            <div class="log-list" id="log-list">
+                <p class="placeholder">아직 요청 기록이 없습니다</p>
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js?v=2"></script>
+</body>
+</html>
