@@ -185,7 +185,7 @@ async function bulkTest() {
             </div>
             <div class="bulk-summary">
                 🏆 <strong>${faster}</strong>가 <strong>${ratio}배</strong> 빠름
-                &nbsp;|&nbsp; 두 방식 모두 정확히 100명만 발급 성공
+                &nbsp;|&nbsp; Redis ${data.redis_success}명, DB ${data.db_success}명 발급 성공
             </div>
         `);
 

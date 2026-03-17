@@ -279,14 +279,33 @@ async def bulk_test() -> BulkTestResponse:
     """1000명 동시 요청을 시뮬레이션하여 Redis vs DB 성능 비교"""
     total = 1000
 
-    # 먼저 재고 초기화
+    # 현재 Redis 재고 조회
+    redis_stock = 100
     try:
-        await redis_set("coupon_stock", "100")
+        value = await redis_get("coupon_stock")
+        if value is not None:
+            redis_stock = max(int(value), 0)
+    except Exception:
+        pass
+
+    # 현재 DB 재고 조회
+    db_stock = 100
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT count FROM coupon_stock WHERE id = 1")
+            if row:
+                db_stock = max(row["count"], 0)
+    except Exception:
+        pass
+
+    # 각각의 현재 재고로 초기화 (발급 기록만 삭제)
+    try:
+        await redis_set("coupon_stock", str(redis_stock))
     except Exception:
         pass
     try:
         async with db_pool.acquire() as conn:
-            await conn.execute("UPDATE coupon_stock SET count = 100 WHERE id = 1")
+            await conn.execute("UPDATE coupon_stock SET count = $1 WHERE id = 1", db_stock)
             await conn.execute("DELETE FROM coupons")
     except Exception:
         pass
@@ -312,10 +331,10 @@ async def bulk_test() -> BulkTestResponse:
     await asyncio.gather(*[redis_request() for _ in range(total)])
     redis_elapsed = (time.perf_counter() - redis_start) * 1000
 
-    # 재고 다시 초기화 (DB 테스트용)
+    # DB 재고 다시 초기화 (DB 테스트용 - DB 원래 재고로)
     try:
         async with db_pool.acquire() as conn:
-            await conn.execute("UPDATE coupon_stock SET count = 100 WHERE id = 1")
+            await conn.execute("UPDATE coupon_stock SET count = $1 WHERE id = 1", db_stock)
             await conn.execute("DELETE FROM coupons")
     except Exception:
         pass
