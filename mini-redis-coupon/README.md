@@ -114,10 +114,12 @@ pytest -v
 ### 쿠폰 발급 방식 비교
 - **Redis 방식**: DECR 원자적 연산으로 재고 감소 → 빠른 처리
 - **DB 방식**: SELECT FOR UPDATE로 행 잠금 후 재고 감소 → 정확하지만 느림
+- **재고 동기화**: 어떤 방식으로 발급하든 Redis/DB 재고가 항상 함께 감소 → 두 숫자는 항상 일치
 
 ### 1000명 동시 테스트
 - asyncio.gather로 1000개 비동기 요청을 동시 실행
-- Redis 방식과 DB 방식의 처리 시간을 비교
+- 각 방식 실험 전 Redis/DB 재고를 모두 100으로 독립 리셋 → 순수하게 처리 속도만 비교
+- Redis 방식 1000명 → 리셋 → DB 방식 1000명 순으로 진행
 
 ---
 
@@ -180,3 +182,242 @@ MINI_REDIS_URL=http://localhost:6379
 ```
 
 자신의 PostgreSQL 설정에 맞게 유저명/비밀번호를 수정하세요.
+
+---
+
+## Backend API curl 명령어
+
+Backend API 서버(포트 8000)를 curl로 호출하면 실제 쿠폰 발급/조회가 동작합니다.
+
+### 쿠폰 발급
+
+```bash
+# Redis 방식 쿠폰 발급
+curl -X POST localhost:8000/coupon/issue/redis
+```
+```json
+{
+  "success": true,
+  "message": "쿠폰이 발급되었습니다! (Redis)",
+  "user_id": 1,
+  "coupon_code": "a1b2c3d4",
+  "remaining": 99,
+  "expires_at": "12:30:15",
+  "elapsed_ms": 3.45
+}
+```
+
+```bash
+# DB 방식 쿠폰 발급
+curl -X POST localhost:8000/coupon/issue/db
+```
+```json
+{
+  "success": true,
+  "message": "쿠폰이 발급되었습니다! (DB)",
+  "user_id": 2,
+  "coupon_code": "e5f6g7h8",
+  "remaining": 98,
+  "expires_at": "12:30:16",
+  "elapsed_ms": 5.12
+}
+```
+
+### 재고 조회 / 초기화
+
+```bash
+# 남은 쿠폰 수량 조회 (Redis + DB 동시)
+curl localhost:8000/coupon/count
+```
+```json
+{"redis_count": 98, "db_count": 98, "elapsed_ms": 1.23}
+```
+
+```bash
+# 쿠폰 재고 100개로 초기화
+curl -X POST localhost:8000/coupon/reset
+```
+```json
+{
+  "success": true,
+  "message": "쿠폰 재고가 100개로 초기화되었습니다",
+  "remaining": 100,
+  "elapsed_ms": 2.34
+}
+```
+
+### 1000명 동시 테스트
+
+```bash
+curl -X POST localhost:8000/coupon/bulk-test
+```
+```json
+{
+  "total_requests": 1000,
+  "redis_success": 100, "redis_sold_out": 900, "redis_error": 0, "redis_elapsed_ms": 250.5,
+  "db_success": 100, "db_sold_out": 900, "db_error": 0, "db_elapsed_ms": 1200.3
+}
+```
+
+### 유효 쿠폰 조회 / 검증
+
+```bash
+# 현재 유효한 쿠폰 목록 (Redis vs DB 비교)
+curl localhost:8000/coupon/valid-coupons
+```
+```json
+{
+  "redis_coupons": [{"coupon_code": "a1b2c3d4", "remaining_seconds": 12}],
+  "redis_count": 1,
+  "redis_elapsed_ms": 0.15,
+  "db_coupons": [{"id": 1, "coupon_code": "a1b2c3d4", "expires_at": "12:30:15"}],
+  "db_count": 1,
+  "db_elapsed_ms": 1.02
+}
+```
+
+```bash
+# 특정 쿠폰 유효성 검증
+curl localhost:8000/coupon/validate/a1b2c3d4
+```
+```json
+{"valid": true, "remaining_seconds": 10, "source": "redis"}
+```
+
+### 헬스 체크
+
+```bash
+curl localhost:8000/health
+```
+```json
+{"status": "ok", "service": "coupon-api"}
+```
+
+---
+
+## Mini Redis curl 명령어
+
+Mini Redis 서버(포트 6379)를 직접 curl로 조작할 수 있습니다.
+
+### 키 조회
+
+```bash
+# 유효한 키 전체 + 남은 TTL 조회
+curl localhost:6379/keys
+```
+```json
+{
+  "count": 3,
+  "keys": [
+    {"key": "coupon_stock", "ttl": -1},
+    {"key": "a1b2c3d4e5", "ttl": 12},
+    {"key": "f6g7h8i9j0", "ttl": 7}
+  ]
+}
+```
+
+```bash
+# 특정 키의 값 조회
+curl localhost:6379/get/coupon_stock
+```
+```json
+{"success": true, "data": "97", "message": ""}
+```
+
+```bash
+# 특정 키의 남은 TTL(초) 조회
+curl localhost:6379/ttl/coupon_stock
+```
+```json
+{"success": true, "data": -1, "message": ""}
+```
+> TTL 값 의미: `-1` 영구 저장 / `-2` 키 없음 또는 만료됨 / `N` 남은 초
+
+### 값 저장 / 삭제
+
+```bash
+# 키-값 저장 (TTL 없음, 영구 저장)
+curl -X POST localhost:6379/set \
+  -H "Content-Type: application/json" \
+  -d '{"key": "foo", "value": "bar"}'
+```
+```json
+{"success": true, "data": "OK", "message": "'foo' 저장 완료"}
+```
+
+```bash
+# 키-값 저장 + TTL 30초 설정
+curl -X POST localhost:6379/set \
+  -H "Content-Type: application/json" \
+  -d '{"key": "foo", "value": "bar", "ttl": 30}'
+
+# 키 삭제
+curl -X DELETE localhost:6379/delete/foo
+```
+```json
+{"success": true, "data": 1, "message": "'foo' 삭제 완료"}
+```
+
+### 숫자 증가 / 감소
+
+```bash
+# 재고 1 감소 (쿠폰 발급 시뮬레이션)
+curl -X POST localhost:6379/decr/coupon_stock
+```
+```json
+{"success": true, "data": 96, "message": ""}
+```
+
+```bash
+# 재고 1 증가
+curl -X POST localhost:6379/incr/coupon_stock
+```
+```json
+{"success": true, "data": 97, "message": ""}
+```
+
+### 헬스 체크
+
+```bash
+curl localhost:6379/health
+```
+```json
+{"status": "ok", "service": "mini-redis"}
+```
+
+> **주의: 포트 6379 서버와 Backend는 별도 프로세스입니다.**
+>
+> Backend(포트 8000)는 `MiniRedisStore` 클래스를 직접 import해서 **같은 프로세스 메모리** 안에서 사용합니다.
+> 포트 6379 Mini Redis 서버는 자체적으로 별도의 `MiniRedisStore` 인스턴스를 가진 **독립된 프로세스**입니다.
+> 따라서 Backend에서 쿠폰을 발급해도 `curl localhost:6379/keys`에는 해당 데이터가 나타나지 않습니다.
+>
+> 이 서버는 Redis 명령어(GET/SET/INCR/DECR 등)를 HTTP로 직접 실험해보는 **학습용**입니다.
+> 쿠폰 발급은 이 서버를 띄우지 않아도 정상 동작합니다.
+
+---
+
+## 아키텍처 설계 배경
+
+### 현재 구조
+
+```
+Backend (포트 8000)
+├── MiniRedisStore  ← 직접 import (in-process, 네트워크 비용 없음)
+└── asyncpg         ← TCP 직접 연결 (PostgreSQL 프로토콜)
+
+Mini Redis 서버 (포트 6379)  ← 독립된 학습용 서버 (Backend와 데이터 공유 안 됨)
+```
+
+### 왜 이 구조인가?
+
+Mini Redis는 6379 포트로 별도 HTTP 서버를 띄웠지만, Backend에서는 in-process(직접 import) 방식으로 사용합니다.
+이유는 PostgreSQL과의 비교 조건을 맞추기 위함입니다.
+
+- **PostgreSQL**은 자체 TCP 프로토콜만 지원하며, HTTP를 기본적으로 지원하지 않습니다.
+  PostgreSQL을 HTTP로 호출하려면 별도의 프록시 서버를 만들어야 합니다.
+- 프록시 없이 두 방식을 비교하기 위해, Redis도 동일하게 **프로세스 내부에서 직접 호출**하는 구조를 선택했습니다.
+
+이는 상용 서비스에서의 패턴과 유사합니다:
+- **실제 Redis**: 애플리케이션이 redis-py 등 클라이언트 라이브러리로 Redis 서버에 TCP 연결
+- **실제 PostgreSQL**: 애플리케이션이 asyncpg/psycopg2 등 드라이버로 PostgreSQL에 TCP 연결
+- 본 프로젝트에서는 Redis 대신 in-process MiniRedisStore를, PostgreSQL은 asyncpg로 직접 연결하여 비교합니다.

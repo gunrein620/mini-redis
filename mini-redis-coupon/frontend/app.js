@@ -1,16 +1,19 @@
 /**
- * 선착순 쿠폰 이벤트 프론트엔드
- * - API 서버(포트 8000)와 통신
- * - 쿠폰 발급, 재고 조회, 동시 테스트 기능
+ * 이 파일은 "사용자 버튼 클릭 -> API 호출 -> 결과 표시" 흐름을 담당합니다.
+ * top-down으로 보면:
+ * 1) 화면 공통 유틸(재고 갱신/로그/로딩 제어)
+ * 2) 사용자 액션 함수(Redis 발급, DB 발급, 벌크 테스트, 초기화)
+ * 3) 페이지 시작 시 자동 갱신
  */
 
 const API_BASE = "http://localhost:8000";
 
-// 요청 로그 배열 (최대 10개 유지)
+// 최근 요청 로그 10개를 화면에 보여주기 위해 메모리에 보관
 let logs = [];
 
 /**
- * 남은 쿠폰 수량을 서버에서 조회하여 화면에 표시
+ * 공통 유틸 1) 재고 조회
+ * 서버에서 Redis/DB 재고를 받아 화면 숫자를 갱신한다.
  */
 async function refreshCount() {
     try {
@@ -21,29 +24,32 @@ async function refreshCount() {
         document.getElementById("db-count").textContent =
             data.db_count !== null ? data.db_count : "-";
     } catch (e) {
-        // 서버 연결 실패 시 무시
+        // 재고 표시 갱신 실패는 UI 전체를 막지 않기 위해 조용히 넘긴다.
     }
 }
 
 /**
- * 결과 박스에 내용을 표시
+ * 공통 유틸 2) 결과 박스 출력
+ * 각 기능 함수가 만든 HTML 문자열을 결과 영역에 반영한다.
  */
 function showResult(html) {
     document.getElementById("result-box").innerHTML = html;
 }
 
 /**
- * 로그 항목을 추가 (최대 10개)
+ * 공통 유틸 3) 로그 추가
+ * 최신 로그를 앞에 넣고, 10개를 넘으면 가장 오래된 로그를 버린다.
  */
 function addLog(message, type, elapsedMs) {
     logs.unshift({ message, type, elapsedMs, time: new Date() });
-    // 최대 10개만 유지
+    // 화면 복잡도를 줄이기 위해 최근 10건만 유지
     if (logs.length > 10) logs.pop();
     renderLogs();
 }
 
 /**
- * 로그 목록을 화면에 렌더링
+ * 공통 유틸 4) 로그 렌더링
+ * logs 배열 상태를 그대로 HTML 리스트로 바꿔 화면에 그린다.
  */
 function renderLogs() {
     const logList = document.getElementById("log-list");
@@ -67,14 +73,16 @@ function renderLogs() {
 }
 
 /**
- * 버튼 비활성화/활성화 토글
+ * 공통 유틸 5) 버튼 잠금/해제
+ * 요청 처리 중 중복 클릭으로 실험 결과가 섞이지 않게 막는다.
  */
 function setButtonsDisabled(disabled) {
     document.querySelectorAll(".btn").forEach((btn) => (btn.disabled = disabled));
 }
 
 /**
- * Redis 방식으로 쿠폰 발급
+ * 사용자 액션 1) Redis 방식 발급
+ * Redis 전용 API를 호출하고, 성공/실패/시간을 결과와 로그에 반영한다.
  */
 async function issueCouponRedis() {
     setButtonsDisabled(true);
@@ -84,14 +92,21 @@ async function issueCouponRedis() {
         const res = await fetch(`${API_BASE}/coupon/issue/redis`, { method: "POST" });
         const data = await res.json();
 
-        if (data.success) {
+        if (!res.ok) {
+            const msg = data.detail || `서버 오류 (${res.status})`;
+            showResult(`<p class="result-fail">❌ ${msg}</p>`);
+            addLog(`[Redis] ${msg}`, "fail", 0);
+        } else if (data.success) {
             showResult(`
                 <p class="result-success">✅ ${data.message}</p>
                 <p>사용자 ID: ${data.user_id}</p>
+                <p>쿠폰 코드: ${data.coupon_code}</p>
                 <p>남은 수량: ${data.remaining}개</p>
+                <p>⏰ 만료 시각: ${data.expires_at} <span style="color:#aaa;font-size:0.85em">(15초 유효)</span></p>
                 <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
+                <button class="btn" style="margin-top:8px" onclick="validateCoupon('${data.coupon_code}', this)">🔍 쿠폰 검증하기</button> <span id="validate-result"></span>
             `);
-            addLog(`[Redis] 발급 성공 (${data.user_id})`, "success", data.elapsed_ms);
+            addLog(`[Redis] 발급 성공 (${data.coupon_code})`, "success", data.elapsed_ms);
         } else {
             showResult(`
                 <p class="result-fail">❌ ${data.message}</p>
@@ -109,7 +124,8 @@ async function issueCouponRedis() {
 }
 
 /**
- * DB 방식으로 쿠폰 발급
+ * 사용자 액션 2) DB 방식 발급
+ * DB 전용 API를 호출하고, Redis 방식과 같은 형식으로 결과를 보여준다.
  */
 async function issueCouponDB() {
     setButtonsDisabled(true);
@@ -119,14 +135,21 @@ async function issueCouponDB() {
         const res = await fetch(`${API_BASE}/coupon/issue/db`, { method: "POST" });
         const data = await res.json();
 
-        if (data.success) {
+        if (!res.ok) {
+            const msg = data.detail || `서버 오류 (${res.status})`;
+            showResult(`<p class="result-fail">❌ ${msg}</p>`);
+            addLog(`[DB] ${msg}`, "fail", 0);
+        } else if (data.success) {
             showResult(`
                 <p class="result-success">✅ ${data.message}</p>
                 <p>사용자 ID: ${data.user_id}</p>
+                <p>쿠폰 코드: ${data.coupon_code}</p>
                 <p>남은 수량: ${data.remaining}개</p>
+                <p>⏰ 만료 시각: ${data.expires_at} <span style="color:#aaa;font-size:0.85em">(15초 유효)</span></p>
                 <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
+                <button class="btn" style="margin-top:8px" onclick="validateCoupon('${data.coupon_code}', this)">🔍 쿠폰 검증하기</button> <span id="validate-result"></span>
             `);
-            addLog(`[DB] 발급 성공 (${data.user_id})`, "success", data.elapsed_ms);
+            addLog(`[DB] 발급 성공 (${data.coupon_code})`, "success", data.elapsed_ms);
         } else {
             showResult(`
                 <p class="result-fail">❌ ${data.message}</p>
@@ -144,7 +167,9 @@ async function issueCouponDB() {
 }
 
 /**
- * 1000명 동시 요청 시뮬레이션
+ * 사용자 액션 3) 벌크 테스트
+ * 백엔드가 수행한 1000명 동시 요청 실험 결과를 받아,
+ * Redis vs DB 처리 시간과 성공/거절 수를 비교해 보여준다.
  */
 async function bulkTest() {
     setButtonsDisabled(true);
@@ -156,7 +181,7 @@ async function bulkTest() {
         const res = await fetch(`${API_BASE}/coupon/bulk-test`, { method: "POST" });
         const data = await res.json();
 
-        // 어느 방식이 빠른지 비교
+        // 어떤 방식이 더 빠른지 계산해서 요약 문구로 보여준다.
         const faster = data.redis_elapsed_ms < data.db_elapsed_ms ? "Redis" : "DB";
         const ratio = faster === "Redis"
             ? (data.db_elapsed_ms / data.redis_elapsed_ms).toFixed(1)
@@ -205,7 +230,8 @@ async function bulkTest() {
 }
 
 /**
- * 쿠폰 재고를 100개로 초기화
+ * 사용자 액션 4) 초기화
+ * 실습을 다시 시작하기 쉽게 Redis/DB 재고를 100으로 맞춘다.
  */
 async function resetCoupon() {
     setButtonsDisabled(true);
@@ -228,7 +254,110 @@ async function resetCoupon() {
     setButtonsDisabled(false);
 }
 
-// 페이지 로드 시 재고 조회
+/**
+ * 사용자 액션 5) 유효 쿠폰 조회 (Redis vs DB 캐싱 속도 비교)
+ * 현재 유효한(TTL이 남은) 쿠폰을 Redis 인메모리와 DB 네트워크 조회로 각각 가져와 속도를 비교한다.
+ */
+async function queryValidCoupons() {
+    setButtonsDisabled(true);
+    showResult('<span class="loading"></span> 유효 쿠폰 조회 중... (Redis vs DB)');
+
+    try {
+        const res = await fetch(`${API_BASE}/coupon/valid-coupons`);
+        const data = await res.json();
+
+        if (!res.ok) {
+            const msg = data.detail || `서버 오류 (${res.status})`;
+            showResult(`<p class="result-fail">${msg}</p>`);
+            addLog(`[조회] ${msg}`, "fail", 0);
+            setButtonsDisabled(false);
+            return;
+        }
+
+        // Redis 쿠폰 목록 HTML (id 내림차순, DB와 동일 형식)
+        const redisList = data.redis_coupons.length > 0
+            ? data.redis_coupons.map((c, i) =>
+                `<div class="coupon-item">${i + 1}) #${c.id} ${c.coupon_code} <span class="ttl-badge">${c.remaining_seconds}초</span></div>`
+            ).join("")
+            : '<p class="placeholder">유효한 쿠폰 없음</p>';
+
+        // DB 쿠폰 목록 HTML (id 내림차순)
+        const dbList = data.db_coupons.length > 0
+            ? data.db_coupons.map((c, i) =>
+                `<div class="coupon-item">${i + 1}) #${c.id} ${c.coupon_code} <span class="ttl-badge">${c.expires_at}</span></div>`
+            ).join("")
+            : '<p class="placeholder">유효한 쿠폰 없음</p>';
+
+        // 속도 비교 요약
+        const faster = data.redis_elapsed_ms < data.db_elapsed_ms ? "Redis" : "DB";
+        const ratio = data.redis_elapsed_ms < data.db_elapsed_ms
+            ? (data.db_elapsed_ms / Math.max(data.redis_elapsed_ms, 0.01)).toFixed(1)
+            : (data.redis_elapsed_ms / Math.max(data.db_elapsed_ms, 0.01)).toFixed(1);
+
+        showResult(`
+            <div class="bulk-result">
+                <div class="bulk-column">
+                    <h3>⚡ Redis 조회 (인메모리)</h3>
+                    <p>유효 쿠폰: <strong>${data.redis_count}개</strong></p>
+                    <div class="coupon-list">${redisList}</div>
+                    <p class="result-time">⏱ ${data.redis_elapsed_ms}ms</p>
+                    <p class="result-detail">방식: 메모리 스캔 + TTL 확인<br>네트워크 비용: 없음 (in-process)</p>
+                </div>
+                <div class="bulk-column">
+                    <h3>🐢 DB 조회 (PostgreSQL)</h3>
+                    <p>유효 쿠폰: <strong>${data.db_count}개</strong></p>
+                    <div class="coupon-list">${dbList}</div>
+                    <p class="result-time">⏱ ${data.db_elapsed_ms}ms</p>
+                    <p class="result-detail">방식: SELECT WHERE expires_at > NOW()<br>네트워크 비용: TCP 왕복 (asyncpg)</p>
+                </div>
+            </div>
+            <div class="bulk-summary">
+                🏆 <strong>${faster}</strong>가 <strong>${ratio}배</strong> 빠름
+                &nbsp;|&nbsp; Redis ${data.redis_count}개, DB ${data.db_count}개 조회
+            </div>
+        `);
+
+        addLog(
+            `[조회] Redis ${data.redis_elapsed_ms}ms (${data.redis_count}개) / DB ${data.db_elapsed_ms}ms (${data.db_count}개)`,
+            "info",
+            Math.round(data.redis_elapsed_ms + data.db_elapsed_ms)
+        );
+    } catch (e) {
+        showResult(`<p class="result-fail">조회 실패: ${e.message}</p>`);
+        addLog(`[조회] 실패`, "fail", 0);
+    }
+
+    setButtonsDisabled(false);
+}
+
+/**
+ * 사용자 액션 6) 쿠폰 검증
+ * Redis TTL로 쿠폰이 아직 유효한지 확인한다 (발급 후 15초 이내 여부).
+ * 버튼 옆 span에 결과를 간단히 표시한다.
+ */
+async function validateCoupon(couponCode, btn) {
+    const span = document.getElementById("validate-result");
+    if (!span) return;
+    span.textContent = "확인 중...";
+
+    try {
+        const res = await fetch(`${API_BASE}/coupon/validate/${couponCode}`);
+        const data = await res.json();
+
+        if (data.valid) {
+            span.style.color = "#4ade80";
+            span.textContent = `✅ 남은 시간: ${data.remaining_seconds}초`;
+        } else {
+            span.style.color = "#f87171";
+            span.textContent = `❌ ${data.reason}`;
+        }
+    } catch (e) {
+        span.style.color = "#f87171";
+        span.textContent = `❌ 검증 실패`;
+    }
+}
+
+// 페이지 시작 시 현재 재고를 먼저 보여준다.
 refreshCount();
-// 3초마다 재고 자동 갱신
+// 학습 중 값 변화를 바로 보도록 3초마다 자동 갱신한다.
 setInterval(refreshCount, 3000);

@@ -124,6 +124,12 @@ section h2 {
     grid-column: 1 / -1;
 }
 
+.btn-query {
+    background: #7c3aed;
+    color: white;
+    grid-column: 1 / -1;
+}
+
 .btn-reset {
     background: #475569;
     color: white;
@@ -200,6 +206,30 @@ section h2 {
     text-align: center;
     font-size: 0.95rem;
     color: #fbbf24;
+}
+
+/* 쿠폰 조회 목록 */
+.coupon-list {
+    max-height: 180px;
+    overflow-y: auto;
+    margin: 0.5rem 0;
+}
+
+.coupon-item {
+    font-size: 0.82rem;
+    padding: 0.3rem 0;
+    color: #cbd5e1;
+    font-family: 'SF Mono', 'Consolas', monospace;
+}
+
+.ttl-badge {
+    display: inline-block;
+    background: #334155;
+    color: #fbbf24;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    margin-left: 0.3rem;
 }
 
 /* 로그 영역 */
