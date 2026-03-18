@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>선착순 쿠폰 이벤트</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="../style.css">
 </head>
 <body>
     <div class="container">
@@ -36,7 +36,7 @@
         <section class="action-section">
             <button class="btn btn-redis" id="btn-redis" onclick="issueCouponRedis()">
                 <span class="btn-icon-wrap" aria-hidden="true">
-                    <img class="btn-icon" src="wg/assets/redis.png" alt="">
+                    <img class="btn-icon" src="../wg/assets/redis.png" alt="">
                 </span>
                 <span class="btn-copy">
                     <span class="btn-title">Redis로 발급</span>
@@ -45,7 +45,7 @@
             </button>
             <button class="btn btn-db" id="btn-db" onclick="issueCouponDB()">
                 <span class="btn-icon-wrap" aria-hidden="true">
-                    <img class="btn-icon" src="wg/assets/postgresql.png" alt="">
+                    <img class="btn-icon" src="../wg/assets/postgresql.png" alt="">
                 </span>
                 <span class="btn-copy">
                     <span class="btn-title">PostgreSQL로 발급</span>
@@ -78,7 +78,7 @@
         </section>
     </div>
 
-    <script src="wg/coupon-storage.js"></script>
-    <script src="app.js"></script>
+    <script src="../wg/coupon-storage.js"></script>
+    <script src="../app.js"></script>
 </body>
 </html>

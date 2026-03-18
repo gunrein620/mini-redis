@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>쿠폰 보관함</title>
+    <link rel="stylesheet" href="../wg/coupon-checkout.css">
+</head>
+<body>
+    <main class="checkout-shell">
+        <section class="checkout-card">
+            <header class="checkout-header">
+                <div>
+                    <p class="eyebrow">Coupon Checkout</p>
+                    <h1>쿠폰 보관함</h1>
+                    <p class="description">사용자 ID로 최근 발급된 쿠폰을 조회하고, 남은 사용 시간을 확인할 수 있습니다.</p>
+                </div>
+                <a class="back-link" href="/coupon/">발급 화면으로 돌아가기</a>
+            </header>
+
+            <form class="lookup-form" id="lookup-form">
+                <label class="field-label" for="user-id-input">사용자 ID</label>
+                <div class="lookup-controls">
+                    <input id="user-id-input" name="userId" type="text" placeholder="예: 1a2b3c4d" autocomplete="off">
+                    <button type="submit" class="primary-button">조회</button>
+                </div>
+            </form>
+
+            <section class="coupon-panel" id="coupon-panel">
+                <div class="empty-state" id="empty-state">사용자 ID를 입력하고 조회하면 보관된 쿠폰 정보가 표시됩니다.</div>
+
+                <div class="coupon-result hidden" id="coupon-result">
+                    <div class="status-row">
+                        <span class="status-badge" id="status-badge">사용 가능</span>
+                        <span class="method-chip" id="method-chip">발급 방식</span>
+                    </div>
+
+                    <dl class="coupon-details">
+                        <div>
+                            <dt>사용자 ID</dt>
+                            <dd id="result-user-id">-</dd>
+                        </div>
+                        <div>
+                            <dt>쿠폰 번호</dt>
+                            <dd id="result-coupon-id">-</dd>
+                        </div>
+                        <div>
+                            <dt>발급 시각</dt>
+                            <dd id="result-issued-at">-</dd>
+                        </div>
+                        <div>
+                            <dt>남은 사용 시간</dt>
+                            <dd id="result-remaining">-</dd>
+                        </div>
+                    </dl>
+
+                    <button type="button" class="use-button" id="use-coupon-button">쿠폰 사용</button>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <div class="modal hidden" id="coupon-modal" role="dialog" aria-modal="true" aria-labelledby="coupon-modal-title">
+        <div class="modal-content">
+            <h2 id="coupon-modal-title">쿠폰 안내</h2>
+            <p>사용 가능한 쿠폰입니다</p>
+            <button type="button" class="primary-button" id="close-modal-button">확인</button>
+        </div>
+    </div>
+
+    <script src="../wg/coupon-storage.js"></script>
+    <script src="../wg/coupon-checkout.js"></script>
+</body>
+</html>

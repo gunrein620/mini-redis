@@ -1,234 +1,211 @@
-/**
- * 선착순 쿠폰 이벤트 프론트엔드
- * - API 서버(포트 8000)와 통신
- * - 쿠폰 발급, 재고 조회, 동시 테스트 기능
- */
-
 const API_BASE = "http://localhost:8000";
+const DEMO_EXPIRY_MINUTES = 3;
 
-// 요청 로그 배열 (최대 10개 유지)
 let logs = [];
 
-/**
- * 남은 쿠폰 수량을 서버에서 조회하여 화면에 표시
- */
-async function refreshCount() {
-    try {
-        const res = await fetch(`${API_BASE}/coupon/count`);
-        const data = await res.json();
-        document.getElementById("redis-count").textContent =
-            data.redis_count !== null ? data.redis_count : "-";
-        document.getElementById("db-count").textContent =
-            data.db_count !== null ? data.db_count : "-";
-    } catch (e) {
-        // 서버 연결 실패 시 무시
-    }
-}
-
-/**
- * 결과 박스에 내용을 표시
- */
 function showResult(html) {
     document.getElementById("result-box").innerHTML = html;
 }
 
-/**
- * 로그 항목을 추가 (최대 10개)
- */
 function addLog(message, type, elapsedMs) {
     logs.unshift({ message, type, elapsedMs, time: new Date() });
-    // 최대 10개만 유지
-    if (logs.length > 10) logs.pop();
+    if (logs.length > 10) {
+        logs.pop();
+    }
     renderLogs();
 }
 
-/**
- * 로그 목록을 화면에 렌더링
- */
 function renderLogs() {
     const logList = document.getElementById("log-list");
     document.getElementById("log-count").textContent = `(${logs.length}/10)`;
 
     if (logs.length === 0) {
-        logList.innerHTML = '<p class="placeholder">아직 요청 기록이 없습니다</p>';
+        logList.innerHTML = '<p class="placeholder">아직 요청 기록이 없습니다.</p>';
         return;
     }
 
     logList.innerHTML = logs
         .map(
             (log) => `
-        <div class="log-item ${log.type}">
-            <span class="log-msg">${log.message}</span>
-            <span class="log-time">${log.elapsedMs}ms</span>
-        </div>
-    `
+                <div class="log-item ${log.type}">
+                    <span class="log-msg">${log.message}</span>
+                    <span class="log-time">${log.elapsedMs}ms</span>
+                </div>
+            `
         )
         .join("");
 }
 
-/**
- * 버튼 비활성화/활성화 토글
- */
 function setButtonsDisabled(disabled) {
-    document.querySelectorAll(".btn").forEach((btn) => (btn.disabled = disabled));
+    document.querySelectorAll(".btn").forEach((button) => {
+        button.disabled = disabled;
+    });
 }
 
-/**
- * Redis 방식으로 쿠폰 발급
- */
+function buildCheckoutHref(userId) {
+    if (window.WGCouponStorage && typeof window.WGCouponStorage.buildCheckoutUrl === "function") {
+        return window.WGCouponStorage.buildCheckoutUrl("/coupon-checkout/", userId);
+    }
+
+    const url = new URL("/coupon-checkout/", window.location.origin);
+    if (userId) {
+        url.searchParams.set("userId", userId);
+    }
+    return url.toString();
+}
+
+function persistCouponIssue(method, response) {
+    if (!window.WGCouponStorage || typeof window.WGCouponStorage.saveCoupon !== "function") {
+        return null;
+    }
+
+    return window.WGCouponStorage.saveCoupon({
+        userId: response.user_id,
+        issuedMethod: method,
+        issuedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + DEMO_EXPIRY_MINUTES * 60 * 1000).toISOString(),
+    });
+}
+
+function renderIssueResult(response, methodLabel) {
+    const checkoutHref = buildCheckoutHref(response.user_id);
+    const savedCoupon = persistCouponIssue(methodLabel.toLowerCase(), response);
+    const couponIdMarkup = savedCoupon
+        ? `<p>쿠폰 번호: <strong>${savedCoupon.couponId}</strong></p>`
+        : "";
+
+    showResult(`
+        <p class="result-success">${response.message}</p>
+        <p>사용자 ID: <strong>${response.user_id}</strong></p>
+        ${couponIdMarkup}
+        <p>남은 재고: ${response.remaining}개</p>
+        <p class="result-time">처리 시간: ${response.elapsed_ms}ms</p>
+        <div class="result-actions">
+            <a class="inline-link" href="${checkoutHref}">쿠폰 보관함으로 이동</a>
+        </div>
+    `);
+
+    addLog(`[${methodLabel}] 발급 성공 (${response.user_id})`, "success", response.elapsed_ms);
+}
+
+function renderFailureResult(response, methodLabel) {
+    showResult(`
+        <p class="result-fail">${response.message}</p>
+        <p class="result-time">처리 시간: ${response.elapsed_ms}ms</p>
+    `);
+
+    addLog(`[${methodLabel}] ${response.message}`, "fail", response.elapsed_ms);
+}
+
+async function refreshCount() {
+    try {
+        const response = await fetch(`${API_BASE}/coupon/count`);
+        const data = await response.json();
+
+        document.getElementById("redis-count").textContent =
+            data.redis_count !== null ? data.redis_count : "-";
+        document.getElementById("db-count").textContent =
+            data.db_count !== null ? data.db_count : "-";
+    } catch (error) {
+        // Ignore initial count loading failures so the page still renders.
+    }
+}
+
 async function issueCouponRedis() {
     setButtonsDisabled(true);
-    showResult('<span class="loading"></span> Redis로 쿠폰 발급 중...');
+    showResult('<span class="loading"></span>Redis 방식으로 쿠폰을 발급하는 중입니다...');
 
     try {
-        const res = await fetch(`${API_BASE}/coupon/issue/redis`, { method: "POST" });
-        const data = await res.json();
+        const response = await fetch(`${API_BASE}/coupon/issue/redis`, { method: "POST" });
+        const data = await response.json();
 
         if (data.success) {
-            showResult(`
-                <p class="result-success">✅ ${data.message}</p>
-                <p>사용자 ID: ${data.user_id}</p>
-                <p>남은 수량: ${data.remaining}개</p>
-                <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
-            `);
-            addLog(`[Redis] 발급 성공 (${data.user_id})`, "success", data.elapsed_ms);
+            renderIssueResult(data, "Redis");
         } else {
-            showResult(`
-                <p class="result-fail">❌ ${data.message}</p>
-                <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
-            `);
-            addLog(`[Redis] ${data.message}`, "fail", data.elapsed_ms);
+            renderFailureResult(data, "Redis");
         }
-    } catch (e) {
-        showResult(`<p class="result-fail">❌ 서버 연결 실패: ${e.message}</p>`);
-        addLog(`[Redis] 연결 실패`, "fail", 0);
+    } catch (error) {
+        showResult(`<p class="result-fail">서버 연결에 실패했습니다: ${error.message}</p>`);
+        addLog("[Redis] 서버 연결 실패", "fail", 0);
     }
 
     await refreshCount();
     setButtonsDisabled(false);
 }
 
-/**
- * DB 방식으로 쿠폰 발급
- */
 async function issueCouponDB() {
     setButtonsDisabled(true);
-    showResult('<span class="loading"></span> DB로 쿠폰 발급 중...');
+    showResult('<span class="loading"></span>PostgreSQL 방식으로 쿠폰을 발급하는 중입니다...');
 
     try {
-        const res = await fetch(`${API_BASE}/coupon/issue/db`, { method: "POST" });
-        const data = await res.json();
+        const response = await fetch(`${API_BASE}/coupon/issue/db`, { method: "POST" });
+        const data = await response.json();
 
         if (data.success) {
-            showResult(`
-                <p class="result-success">✅ ${data.message}</p>
-                <p>사용자 ID: ${data.user_id}</p>
-                <p>남은 수량: ${data.remaining}개</p>
-                <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
-            `);
-            addLog(`[DB] 발급 성공 (${data.user_id})`, "success", data.elapsed_ms);
+            renderIssueResult(data, "PostgreSQL");
         } else {
-            showResult(`
-                <p class="result-fail">❌ ${data.message}</p>
-                <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
-            `);
-            addLog(`[DB] ${data.message}`, "fail", data.elapsed_ms);
+            renderFailureResult(data, "PostgreSQL");
         }
-    } catch (e) {
-        showResult(`<p class="result-fail">❌ 서버 연결 실패: ${e.message}</p>`);
-        addLog(`[DB] 연결 실패`, "fail", 0);
+    } catch (error) {
+        showResult(`<p class="result-fail">서버 연결에 실패했습니다: ${error.message}</p>`);
+        addLog("[PostgreSQL] 서버 연결 실패", "fail", 0);
     }
 
     await refreshCount();
     setButtonsDisabled(false);
 }
 
-/**
- * 1000명 동시 요청 시뮬레이션
- */
 async function bulkTest() {
     setButtonsDisabled(true);
-    showResult(
-        '<span class="loading"></span> 1000명 동시 요청 테스트 중... (잠시 기다려주세요)'
-    );
+    showResult('<span class="loading"></span>1000명 동시 요청 테스트를 실행하는 중입니다...');
 
     try {
-        const res = await fetch(`${API_BASE}/coupon/bulk-test`, { method: "POST" });
-        const data = await res.json();
-
-        // 어느 방식이 빠른지 비교
-        const faster = data.redis_elapsed_ms < data.db_elapsed_ms ? "Redis" : "DB";
-        const ratio = faster === "Redis"
-            ? (data.db_elapsed_ms / data.redis_elapsed_ms).toFixed(1)
-            : (data.redis_elapsed_ms / data.db_elapsed_ms).toFixed(1);
+        const response = await fetch(`${API_BASE}/coupon/bulk-test`, { method: "POST" });
+        const data = await response.json();
+        const faster = data.redis_elapsed_ms < data.db_elapsed_ms ? "Redis" : "PostgreSQL";
 
         showResult(`
-            <div class="bulk-result">
-                <div class="bulk-column">
-                    <h3>⚡ Redis 결과</h3>
-                    <p>총 요청: <strong>${data.total_requests}명</strong></p>
-                    <p class="result-success">✅ 발급 성공: ${data.redis_success}명</p>
-                    <p class="result-fail">🚫 재고 소진: ${data.redis_sold_out}명</p>
-                    ${data.redis_error > 0 ? `<p class="result-fail">💥 에러: ${data.redis_error}명</p>` : ''}
-                    <p class="result-time">⏱ ${data.redis_elapsed_ms}ms</p>
-                    <p class="result-detail">방식: DECR 원자적 연산<br>재고 0 이하 → 즉시 거절</p>
-                </div>
-                <div class="bulk-column">
-                    <h3>🐢 DB 결과</h3>
-                    <p>총 요청: <strong>${data.total_requests}명</strong></p>
-                    <p class="result-success">✅ 발급 성공: ${data.db_success}명</p>
-                    <p class="result-fail">🚫 재고 소진: ${data.db_sold_out}명</p>
-                    ${data.db_error > 0 ? `<p class="result-fail">💥 에러: ${data.db_error}명</p>` : ''}
-                    <p class="result-time">⏱ ${data.db_elapsed_ms}ms</p>
-                    <p class="result-detail">방식: SELECT FOR UPDATE 행 잠금<br>잠금 대기 → 순차 처리 → 거절</p>
-                </div>
-            </div>
-            <div class="bulk-summary">
-                🏆 <strong>${faster}</strong>가 <strong>${ratio}배</strong> 빠름
-                &nbsp;|&nbsp; Redis ${data.redis_success}명, DB ${data.db_success}명 발급 성공
-            </div>
+            <p class="result-info">동시 요청 테스트가 완료되었습니다.</p>
+            <p>Redis 성공: ${data.redis_success}명 / 소진: ${data.redis_sold_out}명</p>
+            <p>PostgreSQL 성공: ${data.db_success}명 / 소진: ${data.db_sold_out}명</p>
+            <p class="result-time">더 빠른 방식: ${faster}</p>
+            <p class="result-time">Redis ${data.redis_elapsed_ms}ms / PostgreSQL ${data.db_elapsed_ms}ms</p>
         `);
 
-        const diff = data.db_elapsed_ms - data.redis_elapsed_ms;
         addLog(
-            `[벌크] Redis ${data.redis_elapsed_ms}ms / DB ${data.db_elapsed_ms}ms`,
+            `[동시 테스트] Redis ${data.redis_elapsed_ms}ms / PostgreSQL ${data.db_elapsed_ms}ms`,
             "info",
             Math.round(data.redis_elapsed_ms + data.db_elapsed_ms)
         );
-    } catch (e) {
-        showResult(`<p class="result-fail">❌ 테스트 실패: ${e.message}</p>`);
-        addLog(`[벌크] 테스트 실패`, "fail", 0);
+    } catch (error) {
+        showResult(`<p class="result-fail">테스트 실행에 실패했습니다: ${error.message}</p>`);
+        addLog("[동시 테스트] 실행 실패", "fail", 0);
     }
 
     await refreshCount();
     setButtonsDisabled(false);
 }
 
-/**
- * 쿠폰 재고를 100개로 초기화
- */
 async function resetCoupon() {
     setButtonsDisabled(true);
 
     try {
-        const res = await fetch(`${API_BASE}/coupon/reset`, { method: "POST" });
-        const data = await res.json();
+        const response = await fetch(`${API_BASE}/coupon/reset`, { method: "POST" });
+        const data = await response.json();
 
         showResult(`
-            <p class="result-info">🔄 ${data.message}</p>
-            <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
+            <p class="result-info">${data.message}</p>
+            <p class="result-time">처리 시간: ${data.elapsed_ms}ms</p>
         `);
-        addLog(`[초기화] 재고 100개로 초기화`, "info", data.elapsed_ms);
-    } catch (e) {
-        showResult(`<p class="result-fail">❌ 초기화 실패: ${e.message}</p>`);
-        addLog(`[초기화] 실패`, "fail", 0);
+        addLog("[초기화] 쿠폰 재고를 100개로 초기화했습니다.", "info", data.elapsed_ms);
+    } catch (error) {
+        showResult(`<p class="result-fail">초기화에 실패했습니다: ${error.message}</p>`);
+        addLog("[초기화] 실행 실패", "fail", 0);
     }
 
     await refreshCount();
     setButtonsDisabled(false);
 }
 
-// 페이지 로드 시 재고 조회
 refreshCount();
-// 3초마다 재고 자동 갱신
 setInterval(refreshCount, 3000);

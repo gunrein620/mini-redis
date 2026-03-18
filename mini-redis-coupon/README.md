@@ -185,3 +185,13 @@ MINI_REDIS_URL=http://localhost:6379
 ```
 
 자신의 PostgreSQL 설정에 맞게 유저명/비밀번호를 수정하세요.
+## Frontend WG Notes
+
+- Home route: `http://localhost:3000/coupon/`
+- Checkout route: `http://localhost:3000/coupon-checkout/`
+- New frontend files live under `frontend/wg/`
+- Coupon checkout data is stored in browser `localStorage` with key `wg-coupon-storage-v1`
+- Demo expiry is set to 3 minutes from issue time in `frontend/app.js`
+- If you want PNG icons inside the issue buttons, add these files:
+- `frontend/wg/assets/redis.png`
+- `frontend/wg/assets/postgresql.png`
