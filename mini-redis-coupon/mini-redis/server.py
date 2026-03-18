@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, Optional, Union
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 
@@ -145,6 +146,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Mini Redis Server", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 # --- 요청/응답 데이터 모델: API 입력과 출력을 일정한 형태로 맞춘다. ---
@@ -231,6 +233,16 @@ async def api_ttl(key: str) -> RedisResponse:
     """GET /ttl/{key}: 키의 남은 TTL(초)을 반환한다. 없으면 -2, TTL 없으면 -1."""
     remaining = await store.ttl(key)
     return RedisResponse(success=True, data=remaining)
+
+
+@app.post("/flushall", summary="FLUSHALL - 모든 키 삭제")
+async def api_flushall():
+    """POST /flushall: 모든 키와 TTL을 삭제한다."""
+    async with store._lock:
+        count = len(store._data)
+        store._data.clear()
+        store._ttl.clear()
+    return RedisResponse(success=True, data=count, message=f"{count}개 키 삭제 완료")
 
 
 @app.get("/health", summary="헬스 체크")
