@@ -90,6 +90,16 @@ class CountResponse(BaseModel):
     elapsed_ms: float = 0
 
 
+class ValidCouponsResponse(BaseModel):
+    """유효 쿠폰 조회 결과(Redis vs DB 비교)."""
+    redis_coupons: list = []        # [{coupon_code, remaining_seconds}]
+    redis_count: int = 0
+    redis_elapsed_ms: float = 0
+    db_coupons: list = []           # [{id, coupon_code, expires_at}]
+    db_count: int = 0
+    db_elapsed_ms: float = 0
+
+
 class BulkTestResponse(BaseModel):
     """동시 요청 실험 결과(성공/실패/소요시간)."""
     total_requests: int
@@ -121,6 +131,11 @@ async def redis_set(key: str, value: str, ttl: Optional[int] = None):
 async def redis_ttl(key: str) -> int:
     """Mini Redis 키의 남은 TTL(초) 반환. 없으면 -2, TTL 없으면 -1."""
     return await redis_store.ttl(key)
+
+
+async def redis_keys() -> list[str]:
+    """Mini Redis에서 유효한 모든 키 목록 조회 (직접 호출)"""
+    return await redis_store.keys()
 
 
 async def redis_decr(key: str) -> int:
@@ -394,6 +409,46 @@ async def bulk_test() -> BulkTestResponse:
         db_success=d_success,
         db_sold_out=d_sold_out,
         db_error=d_error,
+        db_elapsed_ms=round(db_elapsed, 2),
+    )
+
+
+@app.get("/coupon/valid-coupons", summary="유효 쿠폰 조회 (Redis vs DB 비교)")
+async def get_valid_coupons() -> ValidCouponsResponse:
+    """현재 유효한 쿠폰을 Redis와 DB에서 각각 조회해 속도를 비교한다."""
+
+    # --- Redis 조회: 인메모리에서 유효 키 스캔 ---
+    redis_start = time.perf_counter()
+    all_keys = await redis_keys()
+    redis_coupons = []
+    for key in all_keys:
+        if key == "coupon_stock":
+            continue
+        ttl_val = await redis_ttl(key)
+        if ttl_val >= 0:
+            redis_coupons.append({"coupon_code": key, "remaining_seconds": ttl_val})
+    redis_elapsed = (time.perf_counter() - redis_start) * 1000
+
+    # --- DB 조회: 네트워크를 통해 PostgreSQL에서 조회 ---
+    db_start = time.perf_counter()
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, coupon_code, expires_at FROM coupons "
+            "WHERE expires_at > NOW() ORDER BY id DESC"
+        )
+    db_coupons = [
+        {"id": r["id"], "coupon_code": r["coupon_code"],
+         "expires_at": r["expires_at"].strftime("%H:%M:%S")}
+        for r in rows
+    ]
+    db_elapsed = (time.perf_counter() - db_start) * 1000
+
+    return ValidCouponsResponse(
+        redis_coupons=redis_coupons,
+        redis_count=len(redis_coupons),
+        redis_elapsed_ms=round(redis_elapsed, 2),
+        db_coupons=db_coupons,
+        db_count=len(db_coupons),
         db_elapsed_ms=round(db_elapsed, 2),
     )
 

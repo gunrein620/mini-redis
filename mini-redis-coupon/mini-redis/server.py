@@ -102,6 +102,19 @@ class MiniRedisStore:
                 return -2
             return int(remaining)
 
+    async def keys(self) -> list[str]:
+        """현재 유효한 모든 키 목록 반환 (만료된 키는 제외)."""
+        async with self._lock:
+            now = time.time()
+            result = []
+            for key in list(self._data.keys()):
+                if key in self._ttl and now > self._ttl[key]:
+                    del self._data[key]
+                    del self._ttl[key]
+                    continue
+                result.append(key)
+            return result
+
     async def cleanup_expired(self):
         """백그라운드에서 만료된 키를 주기적으로 일괄 삭제한다."""
         async with self._lock:
@@ -200,6 +213,24 @@ async def api_decr(key: str) -> RedisResponse:
         return RedisResponse(success=True, data=new_value)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/keys", summary="KEYS - 유효한 키 전체 조회")
+async def api_keys():
+    """GET /keys: 만료되지 않은 모든 키와 남은 TTL을 반환한다."""
+    keys = await store.keys()
+    result = []
+    for key in keys:
+        remaining = await store.ttl(key)
+        result.append({"key": key, "ttl": remaining})
+    return {"count": len(result), "keys": result}
+
+
+@app.get("/ttl/{key}", summary="TTL - 남은 만료 시간 조회")
+async def api_ttl(key: str) -> RedisResponse:
+    """GET /ttl/{key}: 키의 남은 TTL(초)을 반환한다. 없으면 -2, TTL 없으면 -1."""
+    remaining = await store.ttl(key)
+    return RedisResponse(success=True, data=remaining)
 
 
 @app.get("/health", summary="헬스 체크")

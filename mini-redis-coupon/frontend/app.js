@@ -255,7 +255,83 @@ async function resetCoupon() {
 }
 
 /**
- * 사용자 액션 5) 쿠폰 검증
+ * 사용자 액션 5) 유효 쿠폰 조회 (Redis vs DB 캐싱 속도 비교)
+ * 현재 유효한(TTL이 남은) 쿠폰을 Redis 인메모리와 DB 네트워크 조회로 각각 가져와 속도를 비교한다.
+ */
+async function queryValidCoupons() {
+    setButtonsDisabled(true);
+    showResult('<span class="loading"></span> 유효 쿠폰 조회 중... (Redis vs DB)');
+
+    try {
+        const res = await fetch(`${API_BASE}/coupon/valid-coupons`);
+        const data = await res.json();
+
+        if (!res.ok) {
+            const msg = data.detail || `서버 오류 (${res.status})`;
+            showResult(`<p class="result-fail">${msg}</p>`);
+            addLog(`[조회] ${msg}`, "fail", 0);
+            setButtonsDisabled(false);
+            return;
+        }
+
+        // Redis 쿠폰 목록 HTML
+        const redisList = data.redis_coupons.length > 0
+            ? data.redis_coupons.map((c, i) =>
+                `<div class="coupon-item">${i + 1}) ${c.coupon_code} <span class="ttl-badge">${c.remaining_seconds}초</span></div>`
+            ).join("")
+            : '<p class="placeholder">유효한 쿠폰 없음</p>';
+
+        // DB 쿠폰 목록 HTML
+        const dbList = data.db_coupons.length > 0
+            ? data.db_coupons.map((c, i) =>
+                `<div class="coupon-item">${i + 1}) #${c.id} ${c.coupon_code} <span class="ttl-badge">${c.expires_at}</span></div>`
+            ).join("")
+            : '<p class="placeholder">유효한 쿠폰 없음</p>';
+
+        // 속도 비교 요약
+        const faster = data.redis_elapsed_ms < data.db_elapsed_ms ? "Redis" : "DB";
+        const ratio = data.redis_elapsed_ms < data.db_elapsed_ms
+            ? (data.db_elapsed_ms / Math.max(data.redis_elapsed_ms, 0.01)).toFixed(1)
+            : (data.redis_elapsed_ms / Math.max(data.db_elapsed_ms, 0.01)).toFixed(1);
+
+        showResult(`
+            <div class="bulk-result">
+                <div class="bulk-column">
+                    <h3>⚡ Redis 조회 (인메모리)</h3>
+                    <p>유효 쿠폰: <strong>${data.redis_count}개</strong></p>
+                    <div class="coupon-list">${redisList}</div>
+                    <p class="result-time">⏱ ${data.redis_elapsed_ms}ms</p>
+                    <p class="result-detail">방식: 메모리 스캔 + TTL 확인<br>네트워크 비용: 없음 (in-process)</p>
+                </div>
+                <div class="bulk-column">
+                    <h3>🐢 DB 조회 (PostgreSQL)</h3>
+                    <p>유효 쿠폰: <strong>${data.db_count}개</strong></p>
+                    <div class="coupon-list">${dbList}</div>
+                    <p class="result-time">⏱ ${data.db_elapsed_ms}ms</p>
+                    <p class="result-detail">방식: SELECT WHERE expires_at > NOW()<br>네트워크 비용: TCP 왕복 (asyncpg)</p>
+                </div>
+            </div>
+            <div class="bulk-summary">
+                🏆 <strong>${faster}</strong>가 <strong>${ratio}배</strong> 빠름
+                &nbsp;|&nbsp; Redis ${data.redis_count}개, DB ${data.db_count}개 조회
+            </div>
+        `);
+
+        addLog(
+            `[조회] Redis ${data.redis_elapsed_ms}ms (${data.redis_count}개) / DB ${data.db_elapsed_ms}ms (${data.db_count}개)`,
+            "info",
+            Math.round(data.redis_elapsed_ms + data.db_elapsed_ms)
+        );
+    } catch (e) {
+        showResult(`<p class="result-fail">조회 실패: ${e.message}</p>`);
+        addLog(`[조회] 실패`, "fail", 0);
+    }
+
+    setButtonsDisabled(false);
+}
+
+/**
+ * 사용자 액션 6) 쿠폰 검증
  * Redis TTL로 쿠폰이 아직 유효한지 확인한다 (발급 후 15초 이내 여부).
  * 버튼 옆 span에 결과를 간단히 표시한다.
  */

@@ -180,3 +180,99 @@ MINI_REDIS_URL=http://localhost:6379
 ```
 
 자신의 PostgreSQL 설정에 맞게 유저명/비밀번호를 수정하세요.
+
+---
+
+## Mini Redis curl 명령어
+
+Mini Redis 서버(포트 6379)를 직접 curl로 조작할 수 있습니다.
+
+### 키 조회
+
+```bash
+# 유효한 키 전체 + 남은 TTL 조회
+curl localhost:6379/keys
+```
+```json
+{
+  "count": 3,
+  "keys": [
+    {"key": "coupon_stock", "ttl": -1},
+    {"key": "a1b2c3d4e5", "ttl": 12},
+    {"key": "f6g7h8i9j0", "ttl": 7}
+  ]
+}
+```
+
+```bash
+# 특정 키의 값 조회
+curl localhost:6379/get/coupon_stock
+```
+```json
+{"success": true, "data": "97", "message": ""}
+```
+
+```bash
+# 특정 키의 남은 TTL(초) 조회
+curl localhost:6379/ttl/coupon_stock
+```
+```json
+{"success": true, "data": -1, "message": ""}
+```
+> TTL 값 의미: `-1` 영구 저장 / `-2` 키 없음 또는 만료됨 / `N` 남은 초
+
+### 값 저장 / 삭제
+
+```bash
+# 키-값 저장 (TTL 없음, 영구 저장)
+curl -X POST localhost:6379/set \
+  -H "Content-Type: application/json" \
+  -d '{"key": "foo", "value": "bar"}'
+```
+```json
+{"success": true, "data": "OK", "message": "'foo' 저장 완료"}
+```
+
+```bash
+# 키-값 저장 + TTL 30초 설정
+curl -X POST localhost:6379/set \
+  -H "Content-Type: application/json" \
+  -d '{"key": "foo", "value": "bar", "ttl": 30}'
+
+# 키 삭제
+curl -X DELETE localhost:6379/delete/foo
+```
+```json
+{"success": true, "data": 1, "message": "'foo' 삭제 완료"}
+```
+
+### 숫자 증가 / 감소
+
+```bash
+# 재고 1 감소 (쿠폰 발급 시뮬레이션)
+curl -X POST localhost:6379/decr/coupon_stock
+```
+```json
+{"success": true, "data": 96, "message": ""}
+```
+
+```bash
+# 재고 1 증가
+curl -X POST localhost:6379/incr/coupon_stock
+```
+```json
+{"success": true, "data": 97, "message": ""}
+```
+
+### 헬스 체크
+
+```bash
+curl localhost:6379/health
+```
+```json
+{"status": "ok", "service": "mini-redis"}
+```
+
+> **참고**: 포트 6379 Mini Redis 서버는 백엔드(포트 8000)와 **별개**입니다.
+> 백엔드는 `MiniRedisStore`를 직접 import해 사용하므로, 이 서버를 띄우지 않아도 쿠폰 발급은 동작합니다.
+> 포트 6379 서버는 Redis 명령어를 HTTP로 직접 실험해보는 학습용입니다.
