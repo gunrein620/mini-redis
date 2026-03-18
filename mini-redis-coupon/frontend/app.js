@@ -92,14 +92,18 @@ async function issueCouponRedis() {
         const res = await fetch(`${API_BASE}/coupon/issue/redis`, { method: "POST" });
         const data = await res.json();
 
-        if (data.success) {
+        if (!res.ok) {
+            const msg = data.detail || `서버 오류 (${res.status})`;
+            showResult(`<p class="result-fail">❌ ${msg}</p>`);
+            addLog(`[Redis] ${msg}`, "fail", 0);
+        } else if (data.success) {
             showResult(`
                 <p class="result-success">✅ ${data.message}</p>
-                <p>사용자 ID: ${data.user_id}</p>
+                <p>쿠폰 코드: ${data.coupon_code}</p>
                 <p>남은 수량: ${data.remaining}개</p>
                 <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
             `);
-            addLog(`[Redis] 발급 성공 (${data.user_id})`, "success", data.elapsed_ms);
+            addLog(`[Redis] 발급 성공 (${data.coupon_code})`, "success", data.elapsed_ms);
         } else {
             showResult(`
                 <p class="result-fail">❌ ${data.message}</p>
@@ -128,14 +132,18 @@ async function issueCouponDB() {
         const res = await fetch(`${API_BASE}/coupon/issue/db`, { method: "POST" });
         const data = await res.json();
 
-        if (data.success) {
+        if (!res.ok) {
+            const msg = data.detail || `서버 오류 (${res.status})`;
+            showResult(`<p class="result-fail">❌ ${msg}</p>`);
+            addLog(`[DB] ${msg}`, "fail", 0);
+        } else if (data.success) {
             showResult(`
                 <p class="result-success">✅ ${data.message}</p>
-                <p>사용자 ID: ${data.user_id}</p>
+                <p>쿠폰 코드: ${data.coupon_code}</p>
                 <p>남은 수량: ${data.remaining}개</p>
                 <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
             `);
-            addLog(`[DB] 발급 성공 (${data.user_id})`, "success", data.elapsed_ms);
+            addLog(`[DB] 발급 성공 (${data.coupon_code})`, "success", data.elapsed_ms);
         } else {
             showResult(`
                 <p class="result-fail">❌ ${data.message}</p>

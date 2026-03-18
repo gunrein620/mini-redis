@@ -76,7 +76,7 @@ class CouponResponse(BaseModel):
     """쿠폰 1건 발급 요청의 결과."""
     success: bool
     message: str
-    user_id: Optional[str] = None
+    coupon_code: Optional[str] = None
     remaining: Optional[int] = None
     elapsed_ms: float = 0
 
@@ -133,7 +133,7 @@ async def redis_incr(key: str) -> int:
 async def issue_coupon_redis() -> CouponResponse:
     """Redis 방식 발급: atomic DECR로 재고를 먼저 줄인 뒤, 성공 시 발급 기록 저장."""
     start = time.perf_counter()
-    user_id = str(uuid.uuid4())[:8]
+    coupon_code = str(uuid.uuid4())[:8]
 
     try:
         # 1) 재고를 먼저 1 감소시킨다(동시에 요청이 와도 값이 꼬이지 않음).
@@ -153,15 +153,15 @@ async def issue_coupon_redis() -> CouponResponse:
         # 3) 실제 발급 성공 건은 DB에 이력으로 남긴다.
         async with db_pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO coupons (user_id, issued_at) VALUES ($1, $2)",
-                user_id, datetime.now(),
+                "INSERT INTO coupons (coupon_code, issued_at) VALUES ($1, $2)",
+                coupon_code, datetime.now(),
             )
 
         elapsed = (time.perf_counter() - start) * 1000
         return CouponResponse(
             success=True,
             message="쿠폰이 발급되었습니다! (Redis)",
-            user_id=user_id,
+            coupon_code=coupon_code,
             remaining=remaining,
             elapsed_ms=round(elapsed, 2),
         )
@@ -174,7 +174,7 @@ async def issue_coupon_redis() -> CouponResponse:
 async def issue_coupon_db() -> CouponResponse:
     """DB 방식 발급: 트랜잭션 + 행 잠금(FOR UPDATE)으로 재고를 안전하게 감소."""
     start = time.perf_counter()
-    user_id = str(uuid.uuid4())[:8]
+    coupon_code = str(uuid.uuid4())[:8]
 
     try:
         async with db_pool.acquire() as conn:
@@ -201,15 +201,15 @@ async def issue_coupon_db() -> CouponResponse:
 
                 # 4) 발급 이력 저장
                 await conn.execute(
-                    "INSERT INTO coupons (user_id, issued_at) VALUES ($1, $2)",
-                    user_id, datetime.now(),
+                    "INSERT INTO coupons (coupon_code, issued_at) VALUES ($1, $2)",
+                    coupon_code, datetime.now(),
                 )
 
         elapsed = (time.perf_counter() - start) * 1000
         return CouponResponse(
             success=True,
             message="쿠폰이 발급되었습니다! (DB)",
-            user_id=user_id,
+            coupon_code=coupon_code,
             remaining=new_count,
             elapsed_ms=round(elapsed, 2),
         )
