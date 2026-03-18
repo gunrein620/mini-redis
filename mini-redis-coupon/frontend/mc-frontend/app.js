@@ -99,7 +99,7 @@ function renderCoupons(coupons) {
     let html = `
         <div class="flex items-center justify-between mb-5 animate-fade-up">
             <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold text-[#f5f5f7]">Redis 유효 쿠폰</span>
+                <span class="text-sm font-semibold text-[#1a1a2e]">유효 쿠폰</span>
                 <span class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#0A84FF]/10 text-[#0A84FF] border border-[#0A84FF]/20">${coupons.length}장</span>
             </div>
             <span class="text-[11px] text-[#48484a]">TTL 실시간 카운트다운</span>
@@ -136,7 +136,7 @@ function renderCoupons(coupons) {
                                     style="filter: drop-shadow(0 0 8px ${strokeColor}30);"/>
                             </svg>
                             <div class="absolute inset-0 flex flex-col items-center justify-center">
-                                <span id="timer-text-${idx}" class="text-lg font-bold tabular-nums text-[#f5f5f7]">${formatTtlShort(ttl)}</span>
+                                <span id="timer-text-${idx}" class="text-lg font-bold tabular-nums text-[#1a1a2e]">${formatTtlShort(ttl)}</span>
                                 <span class="text-[9px] text-[#48484a] uppercase tracking-wider mt-0.5 font-semibold">TTL</span>
                             </div>
                         </div>
@@ -153,7 +153,7 @@ function renderCoupons(coupons) {
                     <div class="flex-1 p-5 pl-7 flex flex-col justify-between min-h-[140px]">
                         <div>
                             <p class="text-[10px] font-semibold tracking-[0.15em] uppercase text-[#0A84FF]/60 mb-1">선착순 쿠폰</p>
-                            <p class="text-base font-bold text-[#f5f5f7] tracking-wider font-mono">${escapeHtml(coupon.coupon_code)}</p>
+                            <p class="text-base font-bold text-[#1a1a2e] tracking-wider font-mono">${escapeHtml(coupon.coupon_code)}</p>
                             <p class="text-[11px] text-[#48484a] mt-1 font-mono">ID: ${coupon.id}</p>
                         </div>
                         <div class="flex items-center justify-between mt-3">

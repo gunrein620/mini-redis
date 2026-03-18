@@ -13,16 +13,22 @@ let logs = [];
 
 /**
  * 공통 유틸 1) 재고 조회
- * 서버에서 Redis/DB 재고를 받아 화면 숫자를 갱신한다.
+ * 서버에서 재고를 받아 화면 숫자를 갱신한다.
  */
 async function refreshCount() {
     try {
         const res = await fetch(`${API_BASE}/coupon/count`);
         const data = await res.json();
-        document.getElementById("redis-count").textContent =
-            data.redis_count !== null ? data.redis_count : "-";
-        document.getElementById("db-count").textContent =
-            data.db_count !== null ? data.db_count : "-";
+        const count = data.redis_count !== null ? data.redis_count : data.db_count;
+        const displayValue = count !== null ? count : "-";
+        const primaryCountEl = document.getElementById("coupon-count");
+        const legacyRedisCountEl = document.getElementById("redis-count");
+        const legacyDbCountEl = document.getElementById("db-count");
+
+        if (primaryCountEl) primaryCountEl.textContent = displayValue;
+        if (legacyRedisCountEl) legacyRedisCountEl.textContent = displayValue;
+        if (legacyDbCountEl) legacyDbCountEl.textContent =
+            data.db_count !== null ? data.db_count : displayValue;
     } catch (e) {
         // 재고 표시 갱신 실패는 UI 전체를 막지 않기 위해 조용히 넘긴다.
     }
@@ -186,35 +192,112 @@ async function bulkTest() {
         const ratio = faster === "Redis"
             ? (data.db_elapsed_ms / data.redis_elapsed_ms).toFixed(1)
             : (data.redis_elapsed_ms / data.db_elapsed_ms).toFixed(1);
+        const maxElapsed = Math.max(data.redis_elapsed_ms, data.db_elapsed_ms, 1);
+        const maxCountMetric = Math.max(
+            data.redis_success,
+            data.db_success,
+            data.redis_sold_out,
+            data.db_sold_out,
+            data.redis_error,
+            data.db_error,
+            1
+        );
+        const redisTimeWidth = (data.redis_elapsed_ms / maxElapsed) * 100;
+        const dbTimeWidth = (data.db_elapsed_ms / maxElapsed) * 100;
+        const redisSuccessWidth = (data.redis_success / maxCountMetric) * 100;
+        const dbSuccessWidth = (data.db_success / maxCountMetric) * 100;
+        const redisSoldOutWidth = (data.redis_sold_out / maxCountMetric) * 100;
+        const dbSoldOutWidth = (data.db_sold_out / maxCountMetric) * 100;
+        const redisErrorWidth = (data.redis_error / maxCountMetric) * 100;
+        const dbErrorWidth = (data.db_error / maxCountMetric) * 100;
 
         showResult(`
-            <div class="bulk-result">
-                <div class="bulk-column">
-                    <h3>⚡ Redis 결과</h3>
-                    <p>총 요청: <strong>${data.total_requests}명</strong></p>
-                    <p class="result-success">✅ 발급 성공: ${data.redis_success}명</p>
-                    <p class="result-fail">🚫 재고 소진: ${data.redis_sold_out}명</p>
-                    ${data.redis_error > 0 ? `<p class="result-fail">💥 에러: ${data.redis_error}명</p>` : ''}
-                    <p class="result-time">⏱ ${data.redis_elapsed_ms}ms</p>
-                    <p class="result-detail">방식: DECR 원자적 연산<br>재고 0 이하 → 즉시 거절</p>
+            <div class="bulk-hero">
+                <div class="bulk-hero-label">Bulk Test Result</div>
+                <div class="bulk-hero-value">${faster}가 ${ratio}배 빠름</div>
+                <div class="bulk-hero-copy">총 ${data.total_requests}명 요청 기준으로 처리 시간과 결과를 비교했습니다.</div>
+            </div>
+
+            <div class="bulk-chart">
+                <div class="bulk-chart-group">
+                    <div class="bulk-chart-title">처리 시간</div>
+                    <div class="metric-row">
+                        <div class="metric-label">Redis</div>
+                        <div class="metric-track"><div class="metric-fill redis" style="width:${redisTimeWidth}%;"></div></div>
+                        <div class="metric-value">${data.redis_elapsed_ms}ms</div>
+                    </div>
+                    <div class="metric-row">
+                        <div class="metric-label">DB</div>
+                        <div class="metric-track"><div class="metric-fill db" style="width:${dbTimeWidth}%;"></div></div>
+                        <div class="metric-value">${data.db_elapsed_ms}ms</div>
+                    </div>
                 </div>
-                <div class="bulk-column">
-                    <h3>🐢 DB 결과</h3>
-                    <p>총 요청: <strong>${data.total_requests}명</strong></p>
-                    <p class="result-success">✅ 발급 성공: ${data.db_success}명</p>
-                    <p class="result-fail">🚫 재고 소진: ${data.db_sold_out}명</p>
-                    ${data.db_error > 0 ? `<p class="result-fail">💥 에러: ${data.db_error}명</p>` : ''}
-                    <p class="result-time">⏱ ${data.db_elapsed_ms}ms</p>
-                    <p class="result-detail">방식: SELECT FOR UPDATE 행 잠금<br>잠금 대기 → 순차 처리 → 거절</p>
+
+                <div class="bulk-chart-group">
+                    <div class="bulk-chart-title">발급 성공</div>
+                    <div class="metric-row">
+                        <div class="metric-label">Redis</div>
+                        <div class="metric-track"><div class="metric-fill redis" style="width:${redisSuccessWidth}%;"></div></div>
+                        <div class="metric-value">${data.redis_success}명</div>
+                    </div>
+                    <div class="metric-row">
+                        <div class="metric-label">DB</div>
+                        <div class="metric-track"><div class="metric-fill db" style="width:${dbSuccessWidth}%;"></div></div>
+                        <div class="metric-value">${data.db_success}명</div>
+                    </div>
+                </div>
+
+                <div class="bulk-chart-group">
+                    <div class="bulk-chart-title">재고 소진 / 에러</div>
+                    <div class="metric-row">
+                        <div class="metric-label">Redis</div>
+                        <div class="metric-track"><div class="metric-fill redis" style="width:${redisSoldOutWidth}%;"></div></div>
+                        <div class="metric-value">소진 ${data.redis_sold_out}명</div>
+                    </div>
+                    <div class="metric-row">
+                        <div class="metric-label">DB</div>
+                        <div class="metric-track"><div class="metric-fill db" style="width:${dbSoldOutWidth}%;"></div></div>
+                        <div class="metric-value">소진 ${data.db_sold_out}명</div>
+                    </div>
+                    ${(data.redis_error > 0 || data.db_error > 0) ? `
+                    <div class="metric-row">
+                        <div class="metric-label">Redis</div>
+                        <div class="metric-track"><div class="metric-fill redis" style="width:${redisErrorWidth}%; opacity:0.45;"></div></div>
+                        <div class="metric-value">에러 ${data.redis_error}명</div>
+                    </div>
+                    <div class="metric-row">
+                        <div class="metric-label">DB</div>
+                        <div class="metric-track"><div class="metric-fill db" style="width:${dbErrorWidth}%; opacity:0.45;"></div></div>
+                        <div class="metric-value">에러 ${data.db_error}명</div>
+                    </div>` : ``}
                 </div>
             </div>
-            <div class="bulk-summary">
-                🏆 <strong>${faster}</strong>가 <strong>${ratio}배</strong> 빠름
-                &nbsp;|&nbsp; Redis ${data.redis_success}명, DB ${data.db_success}명 발급 성공
+
+            <div class="bulk-stats">
+                <div class="bulk-stat-card">
+                    <div class="bulk-stat-label">Redis</div>
+                    <div class="bulk-stat-values">
+                        <div>성공 <strong>${data.redis_success}</strong></div>
+                        <div>소진 <strong>${data.redis_sold_out}</strong></div>
+                    </div>
+                </div>
+                <div class="bulk-stat-card">
+                    <div class="bulk-stat-label">DB</div>
+                    <div class="bulk-stat-values">
+                        <div>성공 <strong>${data.db_success}</strong></div>
+                        <div>소진 <strong>${data.db_sold_out}</strong></div>
+                    </div>
+                </div>
+                <div class="bulk-stat-card">
+                    <div class="bulk-stat-label">방식 차이</div>
+                    <div class="bulk-stat-values">
+                        <div>Redis: <strong>DECR</strong></div>
+                        <div>DB: <strong>FOR UPDATE</strong></div>
+                    </div>
+                </div>
             </div>
         `);
 
-        const diff = data.db_elapsed_ms - data.redis_elapsed_ms;
         addLog(
             `[벌크] Redis ${data.redis_elapsed_ms}ms / DB ${data.db_elapsed_ms}ms`,
             "info",
