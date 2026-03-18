@@ -274,14 +274,14 @@ async function queryValidCoupons() {
             return;
         }
 
-        // Redis 쿠폰 목록 HTML
+        // Redis 쿠폰 목록 HTML (id 내림차순, DB와 동일 형식)
         const redisList = data.redis_coupons.length > 0
             ? data.redis_coupons.map((c, i) =>
-                `<div class="coupon-item">${i + 1}) ${c.coupon_code} <span class="ttl-badge">${c.remaining_seconds}초</span></div>`
+                `<div class="coupon-item">${i + 1}) #${c.id} ${c.coupon_code} <span class="ttl-badge">${c.remaining_seconds}초</span></div>`
             ).join("")
             : '<p class="placeholder">유효한 쿠폰 없음</p>';
 
-        // DB 쿠폰 목록 HTML
+        // DB 쿠폰 목록 HTML (id 내림차순)
         const dbList = data.db_coupons.length > 0
             ? data.db_coupons.map((c, i) =>
                 `<div class="coupon-item">${i + 1}) #${c.id} ${c.coupon_code} <span class="ttl-badge">${c.expires_at}</span></div>`

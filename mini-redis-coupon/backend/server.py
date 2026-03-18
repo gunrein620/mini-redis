@@ -148,6 +148,24 @@ async def redis_incr(key: str) -> int:
     return await redis_store.incr(key)
 
 
+async def redis_delete(key: str):
+    """Mini Redis에서 키를 삭제한다."""
+    await redis_store.delete(key)
+
+
+async def reset_stock(stock: int = 100):
+    """Redis/DB 재고를 초기화하고, Redis의 쿠폰 코드 키도 모두 삭제한다."""
+    # coupon_stock을 제외한 Redis 키(쿠폰 코드) 전체 삭제
+    keys = await redis_keys()
+    for key in keys:
+        if key != "coupon_stock":
+            await redis_delete(key)
+    await redis_set("coupon_stock", str(stock))
+    async with db_pool.acquire() as conn:
+        await conn.execute("UPDATE coupon_stock SET count = $1 WHERE id = 1", stock)
+        await conn.execute("DELETE FROM coupons")
+
+
 # --- API 엔드포인트 ---
 # 읽는 순서: 단건 발급(Redis/DB) -> 재고 조회/초기화 -> 대량 비교 실험
 
@@ -185,8 +203,8 @@ async def issue_coupon_redis() -> CouponResponse:
                 await conn.execute(
                     "UPDATE coupon_stock SET count = count - 1 WHERE id = 1 AND count > 0"
                 )
-        # Redis에 coupon_code 키로 "valid" 저장 + TTL 15초 → 15초 후 자동 만료
-        await redis_set(coupon_code, "valid", ttl=15)
+        # Redis에 coupon_code 키로 DB id를 저장 + TTL 15초 → 15초 후 자동 만료
+        await redis_set(coupon_code, str(row["id"]), ttl=15)
 
         elapsed = (time.perf_counter() - start) * 1000
         return CouponResponse(
@@ -240,8 +258,8 @@ async def issue_coupon_db() -> CouponResponse:
                     coupon_code, now, expires,
                 )
 
-        # Redis에 coupon_code 키로 "valid" 저장 + TTL 15초
-        await redis_set(coupon_code, "valid", ttl=15)
+        # Redis에 coupon_code 키로 DB id를 저장 + TTL 15초
+        await redis_set(coupon_code, str(issued["id"]), ttl=15)
         # Redis 재고도 함께 감소시켜 Redis/DB 재고를 동기화한다.
         await redis_decr("coupon_stock")
 
@@ -296,20 +314,12 @@ async def get_coupon_count() -> CountResponse:
 
 @app.post("/coupon/reset", summary="쿠폰 재고 초기화")
 async def reset_coupon() -> CouponResponse:
-    """학습/실험 편의를 위해 쿠폰 재고를 100개로 초기화한다."""
+    """학습/실험 편의를 위해 쿠폰 재고를 100개로 초기화한다.
+    Redis 쿠폰 코드 키도 모두 삭제해 유효 쿠폰 목록을 깨끗하게 비운다."""
     start = time.perf_counter()
 
-    # 1) Redis 재고 초기화
     try:
-        await redis_set("coupon_stock", "100")
-    except Exception:
-        pass
-
-    # 2) DB 재고 초기화 + 발급 기록 삭제(깨끗한 상태로 리셋)
-    try:
-        async with db_pool.acquire() as conn:
-            await conn.execute("UPDATE coupon_stock SET count = 100 WHERE id = 1")
-            await conn.execute("DELETE FROM coupons")
+        await reset_stock(100)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"초기화 실패: {e}")
 
@@ -327,16 +337,10 @@ async def bulk_test() -> BulkTestResponse:
     """1000명 동시 요청으로 Redis 방식과 DB 방식을 같은 조건에서 비교한다."""
     total = 1000
 
-    # A. 실험 준비: 양쪽 재고를 동일한 시작점(100)으로 맞추고, 발급 이력을 초기화한다.
+    # A. 실험 준비: 양쪽 재고를 100으로 맞추고, 발급 이력과 Redis 쿠폰 키를 모두 초기화한다.
     stock = 100
     try:
-        await redis_set("coupon_stock", str(stock))
-    except Exception:
-        pass
-    try:
-        async with db_pool.acquire() as conn:
-            await conn.execute("UPDATE coupon_stock SET count = $1 WHERE id = 1", stock)
-            await conn.execute("DELETE FROM coupons")
+        await reset_stock(stock)
     except Exception:
         pass
 
@@ -361,15 +365,9 @@ async def bulk_test() -> BulkTestResponse:
     await asyncio.gather(*[redis_request() for _ in range(total)])
     redis_elapsed = (time.perf_counter() - redis_start) * 1000
 
-    # C. DB 방식 실험 전, Redis/DB 재고를 모두 같은 시작 상태로 다시 세팅
+    # C. DB 방식 실험 전, Redis/DB 재고와 Redis 쿠폰 키를 모두 다시 초기화
     try:
-        await redis_set("coupon_stock", str(stock))
-    except Exception:
-        pass
-    try:
-        async with db_pool.acquire() as conn:
-            await conn.execute("UPDATE coupon_stock SET count = $1 WHERE id = 1", stock)
-            await conn.execute("DELETE FROM coupons")
+        await reset_stock(stock)
     except Exception:
         pass
 
@@ -419,7 +417,11 @@ async def get_valid_coupons() -> ValidCouponsResponse:
             continue
         ttl_val = await redis_ttl(key)
         if ttl_val >= 0:
-            redis_coupons.append({"coupon_code": key, "remaining_seconds": ttl_val})
+            value = await redis_get(key)
+            coupon_id = int(value) if value and value.isdigit() else 0
+            redis_coupons.append({"id": coupon_id, "coupon_code": key, "remaining_seconds": ttl_val})
+    # DB와 동일하게 id 내림차순 정렬
+    redis_coupons.sort(key=lambda c: c["id"], reverse=True)
     redis_elapsed = (time.perf_counter() - redis_start) * 1000
 
     # --- DB 조회: 네트워크를 통해 PostgreSQL에서 조회 ---
