@@ -476,6 +476,76 @@ async def validate_coupon(coupon_code: str):
     }
 
 
+# --- DBMS 도구용 범용 Redis API ---
+
+class RedisSetRequest(BaseModel):
+    key: str
+    value: str
+    ttl: Optional[int] = None
+
+
+@app.get("/redis/get/{key}", summary="DBMS - GET")
+async def dbms_get(key: str):
+    value = await redis_get(key)
+    return {"success": True, "data": value, "message": "" if value else "키가 존재하지 않습니다"}
+
+
+@app.post("/redis/set", summary="DBMS - SET")
+async def dbms_set(req: RedisSetRequest):
+    await redis_set(req.key, req.value, req.ttl)
+    return {"success": True, "data": "OK", "message": f"'{req.key}' 저장 완료"}
+
+
+@app.delete("/redis/delete/{key}", summary="DBMS - DELETE")
+async def dbms_delete(key: str):
+    keys_before = await redis_keys()
+    existed = key in keys_before
+    await redis_delete(key)
+    return {"success": True, "data": 1 if existed else 0, "message": f"'{key}' 삭제 완료" if existed else "삭제할 키가 없습니다"}
+
+
+@app.get("/redis/keys", summary="DBMS - KEYS")
+async def dbms_keys():
+    keys = await redis_keys()
+    result = []
+    for key in keys:
+        remaining = await redis_ttl(key)
+        result.append({"key": key, "ttl": remaining})
+    return {"count": len(result), "keys": result}
+
+
+@app.get("/redis/ttl/{key}", summary="DBMS - TTL")
+async def dbms_ttl(key: str):
+    remaining = await redis_ttl(key)
+    return {"success": True, "data": remaining}
+
+
+@app.post("/redis/incr/{key}", summary="DBMS - INCR")
+async def dbms_incr(key: str):
+    new_value = await redis_incr(key)
+    return {"success": True, "data": new_value}
+
+
+@app.post("/redis/decr/{key}", summary="DBMS - DECR")
+async def dbms_decr(key: str):
+    new_value = await redis_decr(key)
+    return {"success": True, "data": new_value}
+
+
+@app.post("/redis/flushall", summary="DBMS - FLUSHALL")
+async def dbms_flushall():
+    async with redis_store._lock:
+        count = len(redis_store._data)
+        redis_store._data.clear()
+        redis_store._ttl.clear()
+    return {"success": True, "data": count, "message": f"{count}개 키 삭제 완료"}
+
+
+@app.get("/redis/health", summary="DBMS - 헬스 체크")
+async def dbms_health():
+    return {"status": "ok", "service": "mini-redis"}
+
+
 @app.get("/health", summary="헬스 체크")
 async def health():
     """서버 상태 확인"""
