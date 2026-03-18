@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>쿠폰 TTL 데모</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              baemin: "#2AC1BC",
+              paper: "#F6F6F6",
+              line: "#E5E5E5",
+              ink: "#1E1E1E",
+              muted: "#707070",
+              danger: "#E25B52"
+            },
+            fontFamily: {
+              sans: ["Pretendard", "Inter", "system-ui", "sans-serif"]
+            }
+          }
+        }
+      };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-paper font-sans text-ink antialiased">
+    <main class="mx-auto min-h-screen max-w-[960px] bg-white px-8 py-10">
+      <section class="border-b border-line pb-8">
+        <div class="mb-4 inline-flex items-center gap-2 bg-[#DFF8F6] px-3 py-2 text-xs font-extrabold uppercase tracking-[0.22em] text-baemin">
+          Redis TTL Coupon Demo
+        </div>
+        <h1 class="text-4xl font-extrabold tracking-[-0.05em]">쿠폰 TTL 데모</h1>
+        <p class="mt-4 max-w-[700px] text-base font-medium leading-8 text-muted">
+          아이디를 검색하면 해당 유저가 가진 쿠폰 번호와 만료 시간을 보여줍니다.
+          만료 시간이 지난 뒤 사용하기 버튼을 누르면 사용이 불가능하다는 알림이 뜹니다.
+        </p>
+      </section>
+
+      <section class="border-b border-line py-8">
+        <form id="search-form" class="flex gap-3">
+          <input
+            id="user-search-input"
+            type="text"
+            placeholder="아이디를 입력하세요. 예: user-1001"
+            class="w-full border-2 border-line bg-white px-4 py-4 text-sm font-medium text-ink placeholder:text-muted focus:border-baemin focus:outline-none"
+          />
+          <button
+            type="submit"
+            class="bg-baemin px-6 py-4 text-sm font-extrabold text-white transition hover:bg-[#1fb3ae]"
+          >
+            검색
+          </button>
+        </form>
+
+        <div class="mt-5 text-sm font-medium text-muted">
+          데모 아이디:
+          <div class="mt-2 flex flex-wrap gap-3" id="demo-id-list"></div>
+        </div>
+      </section>
+
+      <section class="border-b border-line py-8">
+        <h2 class="text-2xl font-extrabold tracking-[-0.04em]">검색 결과</h2>
+        <div id="search-summary" class="mt-4 space-y-2 text-sm font-medium leading-7 text-muted">
+          <p>아이디를 검색하면 결과가 여기에 표시됩니다.</p>
+        </div>
+      </section>
+
+      <section class="py-8">
+        <h2 class="text-2xl font-extrabold tracking-[-0.04em]">쿠폰 목록</h2>
+        <div id="coupon-list" class="mt-6 divide-y divide-line border-y border-line">
+          <article class="py-8 text-sm font-medium text-muted">
+            검색 결과가 없습니다.
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const STORAGE_KEY = "baemin-ttl-coupon-demo-v1";
+      const now = Date.now();
+
+      const seedCoupons = [
+        {
+          userId: "user-1001",
+          couponNumber: "BMN-240318-CHKN-01",
+          expiresAt: now + 1000 * 60 * 18
+        },
+        {
+          userId: "user-1001",
+          couponNumber: "BMN-240318-LATE-02",
+          expiresAt: now - 1000 * 60 * 6
+        },
+        {
+          userId: "user-2048",
+          couponNumber: "BMN-240318-SUSHI-11",
+          expiresAt: now + 1000 * 60 * 52
+        },
+        {
+          userId: "user-2048",
+          couponNumber: "BMN-240318-FAST-12",
+          expiresAt: now + 1000 * 90
+        },
+        {
+          userId: "user-7777",
+          couponNumber: "BMN-240318-DSRT-77",
+          expiresAt: now - 1000 * 25
+        }
+      ];
+
+      let state = {
+        selectedUserId: "",
+        coupons: []
+      };
+
+      function initializeData() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (!saved) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(seedCoupons));
+          return seedCoupons;
+        }
+
+        try {
+          return JSON.parse(saved);
+        } catch (error) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(seedCoupons));
+          return seedCoupons;
+        }
+      }
+
+      function getCoupons() {
+        return initializeData();
+      }
+
+      function isExpired(coupon) {
+        return coupon.expiresAt <= Date.now();
+      }
+
+      function formatDate(timestamp) {
+        const date = new Date(timestamp);
+        return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+      }
+
+      function getRemainingLabel(expiresAt) {
+        const diff = expiresAt - Date.now();
+        if (diff <= 0) return "만료됨";
+
+        const totalSeconds = Math.floor(diff / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${minutes}분 ${String(seconds).padStart(2, "0")}초 남음`;
+      }
+
+      function renderDemoIds() {
+        const demoIds = [...new Set(getCoupons().map((coupon) => coupon.userId))];
+        const list = document.getElementById("demo-id-list");
+
+        list.innerHTML = demoIds
+          .map(
+            (userId) => `
+              <button
+                type="button"
+                data-demo-id="${userId}"
+                class="border-2 border-line bg-white px-3 py-2 text-sm font-bold text-ink transition hover:border-baemin hover:text-baemin"
+              >
+                ${userId}
+              </button>
+            `
+          )
+          .join("");
+
+        list.querySelectorAll("[data-demo-id]").forEach((button) => {
+          button.addEventListener("click", () => {
+            const userId = button.dataset.demoId;
+            document.getElementById("user-search-input").value = userId;
+            searchCoupons(userId);
+          });
+        });
+      }
+
+      function renderSummary(userId, coupons) {
+        const summary = document.getElementById("search-summary");
+
+        if (!userId) {
+          summary.innerHTML = "<p>아이디를 검색하면 결과가 여기에 표시됩니다.</p>";
+          return;
+        }
+
+        if (coupons.length === 0) {
+          summary.innerHTML = `
+            <p><strong class="text-ink">${userId}</strong> 로 조회되는 쿠폰이 없습니다.</p>
+          `;
+          return;
+        }
+
+        const validCount = coupons.filter((coupon) => !isExpired(coupon)).length;
+        const expiredCount = coupons.length - validCount;
+
+          summary.innerHTML = `
+            <p>아이디: <strong class="text-ink">${userId}</strong></p>
+            <p>총 쿠폰 수: <strong class="text-ink">${coupons.length}</strong></p>
+            <p>사용 가능: <strong class="text-baemin">${validCount}</strong> / 만료: <strong class="text-danger">${expiredCount}</strong></p>
+          `;
+      }
+
+      function renderCoupons(coupons) {
+        const list = document.getElementById("coupon-list");
+
+        if (coupons.length === 0) {
+          list.innerHTML = `
+            <article class="py-8 text-sm font-medium text-muted">
+              검색 결과가 없습니다.
+            </article>
+          `;
+          return;
+        }
+
+        list.innerHTML = coupons
+          .map((coupon) => {
+            const expired = isExpired(coupon);
+
+            return `
+              <article class="relative overflow-hidden bg-[#FFFEFB] py-6">
+                <div class="absolute left-0 top-0 h-full w-3 ${expired ? "bg-[#d9d9d9]" : "bg-baemin"}"></div>
+                <div class="relative ml-6 border-2 border-dashed ${expired ? "border-[#d9d9d9]" : "border-[#9de5e1]"} bg-white">
+                  <div class="absolute -left-4 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full bg-paper"></div>
+                  <div class="absolute -right-4 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full bg-paper"></div>
+
+                  <div class="grid gap-0 md:grid-cols-[1.2fr_1fr_220px]">
+                    <div class="border-b-2 border-dashed border-line px-6 py-6 md:border-b-0 md:border-r-2">
+                      <div class="flex items-center gap-3">
+                        <span class="inline-flex items-center bg-ink px-3 py-1 text-xs font-extrabold uppercase tracking-[0.18em] text-white">
+                          Coupon
+                        </span>
+                        <span class="text-xs font-extrabold uppercase tracking-[0.2em] ${expired ? "text-danger" : "text-baemin"}">
+                          ${expired ? "Expired" : "Active"}
+                        </span>
+                      </div>
+                      <p class="mt-5 text-xs font-bold uppercase tracking-[0.2em] text-muted">아이디</p>
+                      <p class="mt-2 text-2xl font-extrabold tracking-[-0.04em]">${coupon.userId}</p>
+                      <p class="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-muted">쿠폰 번호</p>
+                      <p class="mt-2 text-2xl font-extrabold tracking-[-0.04em]">${coupon.couponNumber}</p>
+                    </div>
+
+                    <div class="border-b-2 border-dashed border-line px-6 py-6 md:border-b-0 md:border-r-2">
+                      <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted">만료까지</p>
+                      <p class="mt-2 text-3xl font-extrabold tracking-[-0.05em] ${expired ? "text-danger" : "text-baemin"}">
+                        ${getRemainingLabel(coupon.expiresAt)}
+                      </p>
+                      <p class="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-muted">만료시간</p>
+                      <p class="mt-2 text-sm font-semibold leading-6 text-ink">
+                        ${formatDate(coupon.expiresAt)}
+                      </p>
+                      <div class="mt-6 flex items-center gap-2">
+                        <span class="h-2 w-2 rounded-full ${expired ? "bg-danger" : "bg-baemin"}"></span>
+                        <span class="text-sm font-bold ${expired ? "text-danger" : "text-baemin"}">
+                          ${expired ? "사용 불가" : "사용 가능"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div class="flex flex-col justify-between bg-[#fafafa] px-6 py-6">
+                      <div>
+                        <p class="text-xs font-bold uppercase tracking-[0.2em] text-muted">혜택</p>
+                        <p class="mt-2 text-2xl font-extrabold tracking-[-0.04em]">
+                          할인 쿠폰
+                        </p>
+                        <p class="mt-3 text-sm font-medium leading-6 text-muted">
+                          TTL이 살아있는 동안만 사용할 수 있는 데모 쿠폰입니다.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        data-coupon-number="${coupon.couponNumber}"
+                        class="use-coupon-btn mt-6 border-2 px-5 py-3 text-sm font-extrabold transition ${expired ? "border-line bg-white text-muted" : "border-baemin bg-baemin text-white hover:bg-[#1fb3ae]"}"
+                      >
+                        사용하기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            `;
+          })
+          .join("");
+
+        list.querySelectorAll(".use-coupon-btn").forEach((button) => {
+          button.addEventListener("click", () => {
+            const couponNumber = button.dataset.couponNumber;
+            const coupon = state.coupons.find((item) => item.couponNumber === couponNumber);
+
+            if (!coupon) return;
+
+            if (isExpired(coupon)) {
+              alert("쿠폰 만료시간이 지나서 사용이 불가능합니다.");
+              return;
+            }
+
+            alert(`쿠폰 ${coupon.couponNumber} 사용 가능`);
+          });
+        });
+      }
+
+      function searchCoupons(userId) {
+        const normalized = userId.trim();
+        state.selectedUserId = normalized;
+        state.coupons = getCoupons().filter((coupon) => coupon.userId === normalized);
+
+        renderSummary(normalized, state.coupons);
+        renderCoupons(state.coupons);
+
+        const url = new URL(window.location.href);
+        if (normalized) {
+          url.searchParams.set("userId", normalized);
+        } else {
+          url.searchParams.delete("userId");
+        }
+        window.history.replaceState({}, "", url);
+      }
+
+      function bindSearchForm() {
+        document.getElementById("search-form").addEventListener("submit", (event) => {
+          event.preventDefault();
+          searchCoupons(document.getElementById("user-search-input").value);
+        });
+      }
+
+      function bootFromQuery() {
+        const userId = new URLSearchParams(window.location.search).get("userId");
+        if (!userId) return;
+        document.getElementById("user-search-input").value = userId;
+        searchCoupons(userId);
+      }
+
+      function tick() {
+        if (!state.selectedUserId) return;
+        renderSummary(state.selectedUserId, state.coupons);
+        renderCoupons(state.coupons);
+      }
+
+      renderDemoIds();
+      bindSearchForm();
+      bootFromQuery();
+      setInterval(tick, 1000);
+    </script>
+  </body>
+</html>
