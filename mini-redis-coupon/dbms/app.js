@@ -14,6 +14,7 @@ const REDIS_API = "http://localhost:8000/redis";
 let state = {
     keys: [],           // [{key, ttl}, ...]
     selectedKey: null,   // 현재 선택된 키 이름
+    selectedKeyRequestId: 0,
     logs: [],           // 최근 명령 로그 (max 20)
     connected: false,
 };
@@ -82,6 +83,14 @@ async function refreshKeys() {
         document.getElementById("key-count").textContent = state.keys.length;
         updateStats();
         renderKeyList();
+
+        // 선택된 키가 만료/삭제되어 목록에 없으면 detail 패널 닫기
+        if (state.selectedKey && !state.keys.some(k => k.key === state.selectedKey)) {
+            state.selectedKey = null;
+            state.selectedKeyRequestId++;
+            document.getElementById("key-detail").classList.add("hidden");
+            document.getElementById("key-detail").innerHTML = "";
+        }
     } catch {
         // 연결 실패 시 조용히 넘김
     }
@@ -114,6 +123,7 @@ function renderKeyList() {
 
 async function selectKey(key) {
     state.selectedKey = key;
+    const requestId = ++state.selectedKeyRequestId;
     renderKeyList();
 
     const detailEl = document.getElementById("key-detail");
@@ -125,8 +135,16 @@ async function selectKey(key) {
         const value = getRes.data;
         const ttl = ttlRes.data;
 
-        if (value === null) {
+        // 더 최신 선택/갱신이 발생했다면 오래된 응답은 버린다.
+        if (requestId !== state.selectedKeyRequestId || state.selectedKey !== key) {
+            return;
+        }
+
+        if (value === null || ttl === -2) {
+            state.selectedKey = null;
             detailEl.innerHTML = '<div style="padding:1rem;text-align:center;color:#9ca3af;font-size:0.85rem;">키가 만료되었거나 존재하지 않습니다</div>';
+            detailEl.classList.add("hidden");
+            renderKeyList();
             return;
         }
 
@@ -149,6 +167,9 @@ async function selectKey(key) {
                 </div>` : ""}
             </div>`;
     } catch {
+        if (requestId !== state.selectedKeyRequestId || state.selectedKey !== key) {
+            return;
+        }
         detailEl.innerHTML = '<div style="padding:1rem;text-align:center;color:#e63939;font-size:0.85rem;">조회 실패</div>';
     }
 }
@@ -163,8 +184,14 @@ function getInputs() {
     };
 }
 
+function clearInputs() {
+    document.getElementById("input-key").value = "";
+    document.getElementById("input-value").value = "";
+    document.getElementById("input-ttl").value = "";
+}
+
 function showOpResult(html) {
-    document.getElementById("op-result").innerHTML = html;
+    document.getElementById("op-result").innerHTML = `<div class="op-result-content"><span style="color:#38bdf8;">$</span> ${html}</div>`;
 }
 
 async function execGet() {
@@ -174,15 +201,17 @@ async function execGet() {
     try {
         const res = await api.get(key);
         if (res.data !== null) {
-            showOpResult(`<span style="color:#22a352;">${escapeHtml(String(res.data))}</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
+            showOpResult(`<span style="color:#22a352;">${escapeHtml(String(res.data))}</span> <span class="meta">${res._elapsed}ms</span>`);
             addLog("GET", key, "success", res._elapsed);
         } else {
-            showOpResult(`<span style="color:#9ca3af;">(nil)</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
+            showOpResult(`<span style="color:#94a3b8;">(nil)</span> <span class="meta">${res._elapsed}ms</span>`);
             addLog("GET", key, "fail", res._elapsed);
         }
     } catch (e) {
         showOpResult(`<span style="color:#e63939;">연결 실패</span>`);
         addLog("GET", key, "fail", 0);
+    } finally {
+        clearInputs();
     }
 }
 
@@ -192,12 +221,14 @@ async function execSet() {
 
     try {
         const res = await api.set(key, value, ttl || null);
-        showOpResult(`<span style="color:#22a352;">OK</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
+        showOpResult(`<span style="color:#22a352;">OK</span> <span class="meta">${res._elapsed}ms</span>`);
         addLog("SET", key, "success", res._elapsed);
         await refreshKeys();
     } catch {
         showOpResult(`<span style="color:#e63939;">연결 실패</span>`);
         addLog("SET", key, "fail", 0);
+    } finally {
+        clearInputs();
     }
 }
 
@@ -208,16 +239,19 @@ async function execDelete(targetKey) {
     try {
         const res = await api.delete(key);
         const deleted = res.data > 0;
-        showOpResult(`<span style="color:${deleted ? "#22a352" : "#9ca3af"};">${deleted ? "삭제 완료" : "해당 키 없음"}</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
+        showOpResult(`<span style="color:${deleted ? "#22a352" : "#94a3b8"};">${deleted ? "삭제 완료" : "해당 키 없음"}</span> <span class="meta">${res._elapsed}ms</span>`);
         addLog("DEL", key, deleted ? "success" : "fail", res._elapsed);
         if (state.selectedKey === key) {
             state.selectedKey = null;
+            state.selectedKeyRequestId++;
             document.getElementById("key-detail").classList.add("hidden");
         }
         await refreshKeys();
     } catch {
         showOpResult(`<span style="color:#e63939;">연결 실패</span>`);
         addLog("DEL", key, "fail", 0);
+    } finally {
+        if (!targetKey) clearInputs();
     }
 }
 
@@ -232,11 +266,13 @@ async function execKeys() {
         document.getElementById("key-count").textContent = state.keys.length;
         updateStats();
         renderKeyList();
-        showOpResult(`<span style="color:#0A84FF;">${state.keys.length}개 키</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
+        showOpResult(`<span style="color:#0A84FF;">${state.keys.length}개 키</span> <span class="meta">${res._elapsed}ms</span>`);
         addLog("KEYS", "*", "success", res._elapsed);
     } catch {
         showOpResult(`<span style="color:#e63939;">연결 실패</span>`);
         addLog("KEYS", "*", "fail", 0);
+    } finally {
+        clearInputs();
     }
 }
 
@@ -244,9 +280,10 @@ async function execFlushAll() {
     showConfirmModal("모든 키를 삭제하시겠습니까?", async () => {
         try {
             const res = await api.flushall();
-            showOpResult(`<span style="color:#d97706;">${res.data}개 키 삭제 완료</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
+            showOpResult(`<span style="color:#d97706;">${res.data}개 키 삭제 완료</span> <span class="meta">${res._elapsed}ms</span>`);
             addLog("FLUSHALL", "-", "success", res._elapsed);
             state.selectedKey = null;
+            state.selectedKeyRequestId++;
             document.getElementById("key-detail").classList.add("hidden");
             await refreshKeys();
         } catch {
@@ -312,8 +349,9 @@ function showConfirmModal(msg, onConfirm) {
     document.getElementById("modal").classList.remove("hidden");
     modalCallback = onConfirm;
     document.getElementById("modal-confirm").onclick = () => {
+        const callback = modalCallback;
         closeModal();
-        if (modalCallback) modalCallback();
+        if (callback) callback();
     };
 }
 
