@@ -154,7 +154,7 @@ async function selectKey(key) {
         detailEl.innerHTML = `
             <div class="detail-panel" style="margin:0 1rem 1rem;">
                 <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
-                    <span style="font-family:'SF Mono',monospace;font-size:0.85rem;color:#0A84FF;font-weight:600;">${escapeHtml(key)}</span>
+                    <span style="font-family:'SF Mono',monospace;font-size:0.85rem;color:#1a1a2e;font-weight:600;">${escapeHtml(key)}</span>
                     <span style="font-size:0.75rem;color:#9ca3af;">TTL: ${ttlDisplay}</span>
                 </div>
                 <pre style="font-size:0.85rem;color:#1a1a2e;font-family:'SF Mono',monospace;background:rgba(0,0,0,0.03);border-radius:10px;padding:0.75rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">${escapeHtml(value)}</pre>
