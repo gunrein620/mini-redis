@@ -103,25 +103,14 @@ async function issueCouponRedis() {
             showResult(`<p class="result-fail">❌ ${msg}</p>`);
             addLog(`[Redis] ${msg}`, "fail", 0);
         } else if (data.success) {
-            showResult(`
-                <p class="result-success">✅ ${data.message}</p>
-                <p>사용자 ID: ${data.user_id}</p>
-                <p>쿠폰 코드: ${data.coupon_code}</p>
-                <p>남은 수량: ${data.remaining}개</p>
-                <p>⏰ 만료 시각: ${data.expires_at} <span style="color:#aaa;font-size:0.85em">(15초 유효)</span></p>
-                <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
-                <button class="btn" style="margin-top:8px" onclick="validateCoupon('${data.coupon_code}', this)">🔍 쿠폰 검증하기</button> <span id="validate-result"></span>
-            `);
+            showResult(renderTicket("Redis", data));
             addLog(`[Redis] 발급 성공 (${data.coupon_code})`, "success", data.elapsed_ms);
         } else {
-            showResult(`
-                <p class="result-fail">❌ ${data.message}</p>
-                <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
-            `);
+            showResult(renderTicketFail("Redis", data.message, data.elapsed_ms));
             addLog(`[Redis] ${data.message}`, "fail", data.elapsed_ms);
         }
     } catch (e) {
-        showResult(`<p class="result-fail">❌ 서버 연결 실패: ${e.message}</p>`);
+        showResult(renderTicketFail("Redis", `서버 연결 실패: ${e.message}`, 0));
         addLog(`[Redis] 연결 실패`, "fail", 0);
     }
 
@@ -146,25 +135,14 @@ async function issueCouponDB() {
             showResult(`<p class="result-fail">❌ ${msg}</p>`);
             addLog(`[DB] ${msg}`, "fail", 0);
         } else if (data.success) {
-            showResult(`
-                <p class="result-success">✅ ${data.message}</p>
-                <p>사용자 ID: ${data.user_id}</p>
-                <p>쿠폰 코드: ${data.coupon_code}</p>
-                <p>남은 수량: ${data.remaining}개</p>
-                <p>⏰ 만료 시각: ${data.expires_at} <span style="color:#aaa;font-size:0.85em">(15초 유효)</span></p>
-                <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
-                <button class="btn" style="margin-top:8px" onclick="validateCoupon('${data.coupon_code}', this)">🔍 쿠폰 검증하기</button> <span id="validate-result"></span>
-            `);
+            showResult(renderTicket("DB", data));
             addLog(`[DB] 발급 성공 (${data.coupon_code})`, "success", data.elapsed_ms);
         } else {
-            showResult(`
-                <p class="result-fail">❌ ${data.message}</p>
-                <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
-            `);
+            showResult(renderTicketFail("DB", data.message, data.elapsed_ms));
             addLog(`[DB] ${data.message}`, "fail", data.elapsed_ms);
         }
     } catch (e) {
-        showResult(`<p class="result-fail">❌ 서버 연결 실패: ${e.message}</p>`);
+        showResult(renderTicketFail("DB", `서버 연결 실패: ${e.message}`, 0));
         addLog(`[DB] 연결 실패`, "fail", 0);
     }
 
@@ -222,54 +200,31 @@ async function bulkTest() {
                 <div class="bulk-chart-group">
                     <div class="bulk-chart-title">처리 시간</div>
                     <div class="metric-row">
-                        <div class="metric-label">Redis</div>
+                        <div class="metric-label"><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/redis/redis-original.svg" style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:4px;">Redis</div>
                         <div class="metric-track"><div class="metric-fill redis" style="width:${redisTimeWidth}%;"></div></div>
                         <div class="metric-value">${data.redis_elapsed_ms}ms</div>
                     </div>
                     <div class="metric-row">
-                        <div class="metric-label">DB</div>
+                        <div class="metric-label"><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg" style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:4px;">DB</div>
                         <div class="metric-track"><div class="metric-fill db" style="width:${dbTimeWidth}%;"></div></div>
                         <div class="metric-value">${data.db_elapsed_ms}ms</div>
                     </div>
                 </div>
 
-                <div class="bulk-chart-group">
-                    <div class="bulk-chart-title">발급 성공</div>
-                    <div class="metric-row">
-                        <div class="metric-label">Redis</div>
-                        <div class="metric-track"><div class="metric-fill redis" style="width:${redisSuccessWidth}%;"></div></div>
-                        <div class="metric-value">${data.redis_success}명</div>
-                    </div>
-                    <div class="metric-row">
-                        <div class="metric-label">DB</div>
-                        <div class="metric-track"><div class="metric-fill db" style="width:${dbSuccessWidth}%;"></div></div>
-                        <div class="metric-value">${data.db_success}명</div>
+                <div class="bulk-chart-group" style="padding:12px 18px;">
+                    <div class="bulk-chart-title" style="margin-bottom:8px;">발급 성공</div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">
+                        <span style="font-weight:700;color:#ef4444;"><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/redis/redis-original.svg" style="width:12px;height:12px;display:inline;vertical-align:middle;margin-right:3px;">Redis <strong>${data.redis_success}명</strong></span>
+                        <span style="font-weight:700;color:#2563eb;"><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg" style="width:12px;height:12px;display:inline;vertical-align:middle;margin-right:3px;">DB <strong>${data.db_success}명</strong></span>
                     </div>
                 </div>
 
-                <div class="bulk-chart-group">
-                    <div class="bulk-chart-title">재고 소진 / 에러</div>
-                    <div class="metric-row">
-                        <div class="metric-label">Redis</div>
-                        <div class="metric-track"><div class="metric-fill redis" style="width:${redisSoldOutWidth}%;"></div></div>
-                        <div class="metric-value">소진 ${data.redis_sold_out}명</div>
+                <div class="bulk-chart-group" style="padding:12px 18px;">
+                    <div class="bulk-chart-title" style="margin-bottom:8px;">재고 소진 / 에러</div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">
+                        <span style="font-weight:700;color:#ef4444;"><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/redis/redis-original.svg" style="width:12px;height:12px;display:inline;vertical-align:middle;margin-right:3px;">Redis 소진 <strong>${data.redis_sold_out}명</strong>${data.redis_error > 0 ? ` / 에러 <strong>${data.redis_error}명</strong>` : ''}</span>
+                        <span style="font-weight:700;color:#2563eb;"><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg" style="width:12px;height:12px;display:inline;vertical-align:middle;margin-right:3px;">DB 소진 <strong>${data.db_sold_out}명</strong>${data.db_error > 0 ? ` / 에러 <strong>${data.db_error}명</strong>` : ''}</span>
                     </div>
-                    <div class="metric-row">
-                        <div class="metric-label">DB</div>
-                        <div class="metric-track"><div class="metric-fill db" style="width:${dbSoldOutWidth}%;"></div></div>
-                        <div class="metric-value">소진 ${data.db_sold_out}명</div>
-                    </div>
-                    ${(data.redis_error > 0 || data.db_error > 0) ? `
-                    <div class="metric-row">
-                        <div class="metric-label">Redis</div>
-                        <div class="metric-track"><div class="metric-fill redis" style="width:${redisErrorWidth}%; opacity:0.45;"></div></div>
-                        <div class="metric-value">에러 ${data.redis_error}명</div>
-                    </div>
-                    <div class="metric-row">
-                        <div class="metric-label">DB</div>
-                        <div class="metric-track"><div class="metric-fill db" style="width:${dbErrorWidth}%; opacity:0.45;"></div></div>
-                        <div class="metric-value">에러 ${data.db_error}명</div>
-                    </div>` : ``}
                 </div>
             </div>
 
@@ -377,27 +332,85 @@ async function queryValidCoupons() {
             ? (data.db_elapsed_ms / Math.max(data.redis_elapsed_ms, 0.01)).toFixed(1)
             : (data.redis_elapsed_ms / Math.max(data.db_elapsed_ms, 0.01)).toFixed(1);
 
+        const maxElapsed = Math.max(data.redis_elapsed_ms, data.db_elapsed_ms, 1);
+        const redisTimeWidth = (data.redis_elapsed_ms / maxElapsed) * 100;
+        const dbTimeWidth = (data.db_elapsed_ms / maxElapsed) * 100;
+        const maxCount = Math.max(data.redis_count, data.db_count, 1);
+        const redisCountWidth = (data.redis_count / maxCount) * 100;
+        const dbCountWidth = (data.db_count / maxCount) * 100;
+
         showResult(`
-            <div class="bulk-result">
-                <div class="bulk-column">
-                    <h3>⚡ Redis 조회 (인메모리)</h3>
-                    <p>유효 쿠폰: <strong>${data.redis_count}개</strong></p>
+            <div class="bulk-hero">
+                <div class="bulk-hero-label">Valid Coupon Query</div>
+                <div class="bulk-hero-value">${faster}가 ${ratio}배 빠름</div>
+                <div class="bulk-hero-copy">Redis 인메모리 vs DB 네트워크 조회 속도를 비교했습니다.</div>
+            </div>
+
+            <div class="bulk-chart">
+                <div class="bulk-chart-group">
+                    <div class="bulk-chart-title">조회 시간</div>
+                    <div class="metric-row">
+                        <div class="metric-label"><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/redis/redis-original.svg" style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:4px;">Redis</div>
+                        <div class="metric-track"><div class="metric-fill redis" style="width:${redisTimeWidth}%;"></div></div>
+                        <div class="metric-value">${data.redis_elapsed_ms}ms</div>
+                    </div>
+                    <div class="metric-row">
+                        <div class="metric-label"><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg" style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:4px;">DB</div>
+                        <div class="metric-track"><div class="metric-fill db" style="width:${dbTimeWidth}%;"></div></div>
+                        <div class="metric-value">${data.db_elapsed_ms}ms</div>
+                    </div>
+                </div>
+
+                <div class="bulk-chart-group">
+                    <div class="bulk-chart-title">유효 쿠폰 수</div>
+                    <div class="metric-row">
+                        <div class="metric-label"><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/redis/redis-original.svg" style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:4px;">Redis</div>
+                        <div class="metric-track"><div class="metric-fill redis" style="width:${redisCountWidth}%;"></div></div>
+                        <div class="metric-value">${data.redis_count}개</div>
+                    </div>
+                    <div class="metric-row">
+                        <div class="metric-label"><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg" style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:4px;">DB</div>
+                        <div class="metric-track"><div class="metric-fill db" style="width:${dbCountWidth}%;"></div></div>
+                        <div class="metric-value">${data.db_count}개</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bulk-stats">
+                <div class="bulk-stat-card">
+                    <div class="bulk-stat-label">Redis</div>
+                    <div class="bulk-stat-values">
+                        <div>유효 <strong>${data.redis_count}개</strong></div>
+                        <div>방식 <strong>TTL 스캔</strong></div>
+                    </div>
+                </div>
+                <div class="bulk-stat-card">
+                    <div class="bulk-stat-label">DB</div>
+                    <div class="bulk-stat-values">
+                        <div>유효 <strong>${data.db_count}개</strong></div>
+                        <div>방식 <strong>expires_at</strong></div>
+                    </div>
+                </div>
+                <div class="bulk-stat-card">
+                    <div class="bulk-stat-label">네트워크</div>
+                    <div class="bulk-stat-values">
+                        <div>Redis: <strong>in-process</strong></div>
+                        <div>DB: <strong>TCP 왕복</strong></div>
+                    </div>
+                </div>
+            </div>
+
+            ${data.redis_coupons.length > 0 || data.db_coupons.length > 0 ? `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px;">
+                <div class="bulk-stat-card" style="text-align:left;">
+                    <div class="bulk-stat-label" style="margin-bottom:8px;">Redis 쿠폰 목록</div>
                     <div class="coupon-list">${redisList}</div>
-                    <p class="result-time">⏱ ${data.redis_elapsed_ms}ms</p>
-                    <p class="result-detail">방식: 메모리 스캔 + TTL 확인<br>네트워크 비용: 없음 (in-process)</p>
                 </div>
-                <div class="bulk-column">
-                    <h3>🐢 DB 조회 (PostgreSQL)</h3>
-                    <p>유효 쿠폰: <strong>${data.db_count}개</strong></p>
+                <div class="bulk-stat-card" style="text-align:left;">
+                    <div class="bulk-stat-label" style="margin-bottom:8px;">DB 쿠폰 목록</div>
                     <div class="coupon-list">${dbList}</div>
-                    <p class="result-time">⏱ ${data.db_elapsed_ms}ms</p>
-                    <p class="result-detail">방식: SELECT WHERE expires_at > NOW()<br>네트워크 비용: TCP 왕복 (asyncpg)</p>
                 </div>
-            </div>
-            <div class="bulk-summary">
-                🏆 <strong>${faster}</strong>가 <strong>${ratio}배</strong> 빠름
-                &nbsp;|&nbsp; Redis ${data.redis_count}개, DB ${data.db_count}개 조회
-            </div>
+            </div>` : ``}
         `);
 
         addLog(
@@ -428,16 +441,77 @@ async function validateCoupon(couponCode, btn) {
         const data = await res.json();
 
         if (data.valid) {
-            span.style.color = "#4ade80";
+            span.style.color = "#16a34a";
             span.textContent = `✅ 남은 시간: ${data.remaining_seconds}초`;
         } else {
-            span.style.color = "#f87171";
+            span.style.color = "#dc2626";
             span.textContent = `❌ ${data.reason}`;
         }
     } catch (e) {
-        span.style.color = "#f87171";
+        span.style.color = "#dc2626";
         span.textContent = `❌ 검증 실패`;
     }
+}
+
+/**
+ * 티켓 카드 렌더링 — 발급 성공
+ */
+function renderTicket(method, data) {
+    return `
+        <div class="ticket">
+            <div class="ticket-header">
+                <div class="ticket-header-title">${method} 발급 성공</div>
+                <div class="ticket-header-badge">${method}</div>
+            </div>
+            <div class="ticket-code-area">
+                <div class="ticket-notch ticket-notch-left"></div>
+                <div class="ticket-notch ticket-notch-right"></div>
+                <div class="ticket-code">${data.coupon_code}</div>
+                <div class="ticket-code-sub">COUPON CODE</div>
+            </div>
+            <div class="ticket-details">
+                <div class="ticket-detail-item">
+                    <div class="ticket-detail-label">사용자</div>
+                    <div class="ticket-detail-value">${data.user_id}</div>
+                </div>
+                <div class="ticket-detail-item">
+                    <div class="ticket-detail-label">남은 수량</div>
+                    <div class="ticket-detail-value">${data.remaining}개</div>
+                </div>
+                <div class="ticket-detail-item">
+                    <div class="ticket-detail-label">만료 시각</div>
+                    <div class="ticket-detail-value">${data.expires_at}</div>
+                </div>
+                <div class="ticket-detail-item">
+                    <div class="ticket-detail-label">유효 시간</div>
+                    <div class="ticket-detail-value">15초</div>
+                </div>
+            </div>
+            <div class="ticket-footer">
+                <div class="ticket-elapsed">${data.elapsed_ms}ms</div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span id="validate-result" style="font-size:13px;font-weight:600;"></span>
+                    <button class="ticket-validate-btn" onclick="validateCoupon('${data.coupon_code}', this)">쿠폰 검증</button>
+                </div>
+            </div>
+        </div>`;
+}
+
+/**
+ * 티켓 카드 렌더링 — 발급 실패
+ */
+function renderTicketFail(method, message, elapsedMs) {
+    return `
+        <div class="ticket">
+            <div class="ticket-header">
+                <div class="ticket-header-title" style="color:#e63939;">${message}</div>
+                <div class="ticket-header-badge fail-badge">${method}</div>
+            </div>
+            ${elapsedMs ? `
+            <div class="ticket-footer" style="border-top:none;">
+                <div class="ticket-elapsed">${elapsedMs}ms</div>
+            </div>` : ``}
+        </div>`;
 }
 
 // 페이지 시작 시 현재 재고를 먼저 보여준다.

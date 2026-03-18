@@ -57,9 +57,9 @@ function setConnected(ok) {
     state.connected = ok;
     const dot = document.getElementById("status-dot");
     const text = document.getElementById("status-text");
-    dot.className = `absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0a0a0f] transition-colors duration-300 ${ok ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`;
+    dot.className = `absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#f0f6ff] transition-colors duration-300 ${ok ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`;
     text.textContent = ok ? "Connected" : "Disconnected";
-    text.className = `ml-auto text-xs transition-colors duration-300 ${ok ? "text-emerald-400/70" : "text-red-400/70"}`;
+    text.className = `inline-block text-xs transition-colors duration-300 ${ok ? "text-emerald-600/70" : "text-red-400/70"}`;
 }
 
 // ── Dashboard Stats ──
@@ -90,7 +90,7 @@ async function refreshKeys() {
 function renderKeyList() {
     const container = document.getElementById("key-list");
     if (state.keys.length === 0) {
-        container.innerHTML = '<p class="text-center text-sm text-white/20 py-6">키가 없습니다</p>';
+        container.innerHTML = '<p class="text-center text-sm text-[#9ca3af] py-6">키가 없습니다</p>';
         return;
     }
 
@@ -101,11 +101,12 @@ function renderKeyList() {
             : `<span class="ttl-badge persistent">persistent</span>`;
         return `
             <div class="key-row ${isSelected ? "selected" : ""}" onclick="selectKey('${escapeAttr(k.key)}')">
-                <span class="font-mono text-sm text-white/70">${escapeHtml(k.key)}</span>
-                <div class="flex items-center gap-2">
+                <span style="font-family:'SF Mono','Consolas',monospace;font-size:0.85rem;color:#1a1a2e;">${escapeHtml(k.key)}</span>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
                     ${ttlHtml}
                     <button onclick="event.stopPropagation(); quickDelete('${escapeAttr(k.key)}')"
-                            class="text-white/15 hover:text-red-400 transition-colors text-xs">✕</button>
+                            style="color:#cbd5e1;border:none;background:none;cursor:pointer;font-size:0.75rem;transition:color 0.15s;"
+                            onmouseover="this.style.color='#e63939'" onmouseout="this.style.color='#cbd5e1'">✕</button>
                 </div>
             </div>`;
     }).join("");
@@ -117,7 +118,7 @@ async function selectKey(key) {
 
     const detailEl = document.getElementById("key-detail");
     detailEl.classList.remove("hidden");
-    detailEl.innerHTML = '<div class="p-4 text-center"><span class="loading"></span></div>';
+    detailEl.innerHTML = '<div style="padding:1rem;text-align:center;"><span class="loading"></span></div>';
 
     try {
         const [getRes, ttlRes] = await Promise.all([api.get(key), api.ttl(key)]);
@@ -125,7 +126,7 @@ async function selectKey(key) {
         const ttl = ttlRes.data;
 
         if (value === null) {
-            detailEl.innerHTML = '<div class="p-4 text-center text-white/30 text-sm">키가 만료되었거나 존재하지 않습니다</div>';
+            detailEl.innerHTML = '<div style="padding:1rem;text-align:center;color:#9ca3af;font-size:0.85rem;">키가 만료되었거나 존재하지 않습니다</div>';
             return;
         }
 
@@ -133,22 +134,22 @@ async function selectKey(key) {
         const ttlDisplay = ttl === -1 ? "영구" : ttl === -2 ? "만료" : `${ttl}초 남음`;
 
         detailEl.innerHTML = `
-            <div class="detail-panel mx-4 mb-4">
-                <div class="flex items-center gap-2 mb-2">
-                    <span class="font-mono text-sm text-violet-400 font-semibold">${escapeHtml(key)}</span>
-                    <span class="text-xs text-white/30">TTL: ${ttlDisplay}</span>
+            <div class="detail-panel" style="margin:0 1rem 1rem;">
+                <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+                    <span style="font-family:'SF Mono',monospace;font-size:0.85rem;color:#0A84FF;font-weight:600;">${escapeHtml(key)}</span>
+                    <span style="font-size:0.75rem;color:#9ca3af;">TTL: ${ttlDisplay}</span>
                 </div>
-                <pre class="text-sm text-white/70 font-mono bg-black/20 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all">${escapeHtml(value)}</pre>
+                <pre style="font-size:0.85rem;color:#1a1a2e;font-family:'SF Mono',monospace;background:rgba(0,0,0,0.03);border-radius:10px;padding:0.75rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">${escapeHtml(value)}</pre>
                 ${isNumeric ? `
-                <div class="flex gap-2 mt-3">
+                <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
                     <button onclick="execIncr('${escapeAttr(key)}')"
-                            class="px-4 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 active:scale-[0.97] transition-all">INCR +1</button>
+                            class="btn btn-set" style="padding:6px 16px;font-size:0.75rem;">INCR +1</button>
                     <button onclick="execDecr('${escapeAttr(key)}')"
-                            class="px-4 py-1.5 rounded-lg text-xs font-semibold bg-rose-600/80 hover:bg-rose-500 active:scale-[0.97] transition-all">DECR -1</button>
+                            class="btn btn-del" style="padding:6px 16px;font-size:0.75rem;">DECR -1</button>
                 </div>` : ""}
             </div>`;
     } catch {
-        detailEl.innerHTML = '<div class="p-4 text-center text-red-400/70 text-sm">조회 실패</div>';
+        detailEl.innerHTML = '<div style="padding:1rem;text-align:center;color:#e63939;font-size:0.85rem;">조회 실패</div>';
     }
 }
 
@@ -168,46 +169,46 @@ function showOpResult(html) {
 
 async function execGet() {
     const { key } = getInputs();
-    if (!key) { showOpResult('<span class="text-red-400">key를 입력하세요</span>'); return; }
+    if (!key) { showOpResult('<span style="color:#e63939;">key를 입력하세요</span>'); return; }
 
     try {
         const res = await api.get(key);
         if (res.data !== null) {
-            showOpResult(`<span class="text-emerald-400">${escapeHtml(String(res.data))}</span> <span class="text-white/30 text-xs">${res._elapsed}ms</span>`);
+            showOpResult(`<span style="color:#22a352;">${escapeHtml(String(res.data))}</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
             addLog("GET", key, "success", res._elapsed);
         } else {
-            showOpResult(`<span class="text-white/40">(nil)</span> <span class="text-white/30 text-xs">${res._elapsed}ms</span>`);
+            showOpResult(`<span style="color:#9ca3af;">(nil)</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
             addLog("GET", key, "fail", res._elapsed);
         }
     } catch (e) {
-        showOpResult(`<span class="text-red-400">연결 실패</span>`);
+        showOpResult(`<span style="color:#e63939;">연결 실패</span>`);
         addLog("GET", key, "fail", 0);
     }
 }
 
 async function execSet() {
     const { key, value, ttl } = getInputs();
-    if (!key) { showOpResult('<span class="text-red-400">key를 입력하세요</span>'); return; }
+    if (!key) { showOpResult('<span style="color:#e63939;">key를 입력하세요</span>'); return; }
 
     try {
         const res = await api.set(key, value, ttl || null);
-        showOpResult(`<span class="text-emerald-400">OK</span> <span class="text-white/30 text-xs">${res._elapsed}ms</span>`);
+        showOpResult(`<span style="color:#22a352;">OK</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
         addLog("SET", key, "success", res._elapsed);
         await refreshKeys();
     } catch {
-        showOpResult(`<span class="text-red-400">연결 실패</span>`);
+        showOpResult(`<span style="color:#e63939;">연결 실패</span>`);
         addLog("SET", key, "fail", 0);
     }
 }
 
 async function execDelete(targetKey) {
     const key = targetKey || getInputs().key;
-    if (!key) { showOpResult('<span class="text-red-400">key를 입력하세요</span>'); return; }
+    if (!key) { showOpResult('<span style="color:#e63939;">key를 입력하세요</span>'); return; }
 
     try {
         const res = await api.delete(key);
         const deleted = res.data > 0;
-        showOpResult(`<span class="${deleted ? "text-emerald-400" : "text-white/40"}">${deleted ? "삭제 완료" : "해당 키 없음"}</span> <span class="text-white/30 text-xs">${res._elapsed}ms</span>`);
+        showOpResult(`<span style="color:${deleted ? "#22a352" : "#9ca3af"};">${deleted ? "삭제 완료" : "해당 키 없음"}</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
         addLog("DEL", key, deleted ? "success" : "fail", res._elapsed);
         if (state.selectedKey === key) {
             state.selectedKey = null;
@@ -215,7 +216,7 @@ async function execDelete(targetKey) {
         }
         await refreshKeys();
     } catch {
-        showOpResult(`<span class="text-red-400">연결 실패</span>`);
+        showOpResult(`<span style="color:#e63939;">연결 실패</span>`);
         addLog("DEL", key, "fail", 0);
     }
 }
@@ -231,10 +232,10 @@ async function execKeys() {
         document.getElementById("key-count").textContent = state.keys.length;
         updateStats();
         renderKeyList();
-        showOpResult(`<span class="text-indigo-400">${state.keys.length}개 키</span> <span class="text-white/30 text-xs">${res._elapsed}ms</span>`);
+        showOpResult(`<span style="color:#0A84FF;">${state.keys.length}개 키</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
         addLog("KEYS", "*", "success", res._elapsed);
     } catch {
-        showOpResult(`<span class="text-red-400">연결 실패</span>`);
+        showOpResult(`<span style="color:#e63939;">연결 실패</span>`);
         addLog("KEYS", "*", "fail", 0);
     }
 }
@@ -243,13 +244,13 @@ async function execFlushAll() {
     showConfirmModal("모든 키를 삭제하시겠습니까?", async () => {
         try {
             const res = await api.flushall();
-            showOpResult(`<span class="text-amber-400">${res.data}개 키 삭제 완료</span> <span class="text-white/30 text-xs">${res._elapsed}ms</span>`);
+            showOpResult(`<span style="color:#d97706;">${res.data}개 키 삭제 완료</span> <span style="color:#9ca3af;font-size:0.75rem;">${res._elapsed}ms</span>`);
             addLog("FLUSHALL", "-", "success", res._elapsed);
             state.selectedKey = null;
             document.getElementById("key-detail").classList.add("hidden");
             await refreshKeys();
         } catch {
-            showOpResult(`<span class="text-red-400">연결 실패</span>`);
+            showOpResult(`<span style="color:#e63939;">연결 실패</span>`);
             addLog("FLUSHALL", "-", "fail", 0);
         }
     });
@@ -290,7 +291,7 @@ function renderLogs() {
     document.getElementById("log-count").textContent = `(${state.logs.length}/20)`;
 
     if (state.logs.length === 0) {
-        container.innerHTML = '<p class="text-center text-sm text-white/20 py-3">아직 기록이 없습니다</p>';
+        container.innerHTML = '<p class="text-center text-sm" style="color:#9ca3af;padding:1rem 0;">아직 기록이 없습니다</p>';
         return;
     }
 
