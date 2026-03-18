@@ -1,16 +1,19 @@
 /**
- * 선착순 쿠폰 이벤트 프론트엔드
- * - API 서버(포트 8000)와 통신
- * - 쿠폰 발급, 재고 조회, 동시 테스트 기능
+ * 이 파일은 "사용자 버튼 클릭 -> API 호출 -> 결과 표시" 흐름을 담당합니다.
+ * top-down으로 보면:
+ * 1) 화면 공통 유틸(재고 갱신/로그/로딩 제어)
+ * 2) 사용자 액션 함수(Redis 발급, DB 발급, 벌크 테스트, 초기화)
+ * 3) 페이지 시작 시 자동 갱신
  */
 
 const API_BASE = "http://localhost:8000";
 
-// 요청 로그 배열 (최대 10개 유지)
+// 최근 요청 로그 10개를 화면에 보여주기 위해 메모리에 보관
 let logs = [];
 
 /**
- * 남은 쿠폰 수량을 서버에서 조회하여 화면에 표시
+ * 공통 유틸 1) 재고 조회
+ * 서버에서 Redis/DB 재고를 받아 화면 숫자를 갱신한다.
  */
 async function refreshCount() {
     try {
@@ -21,29 +24,32 @@ async function refreshCount() {
         document.getElementById("db-count").textContent =
             data.db_count !== null ? data.db_count : "-";
     } catch (e) {
-        // 서버 연결 실패 시 무시
+        // 재고 표시 갱신 실패는 UI 전체를 막지 않기 위해 조용히 넘긴다.
     }
 }
 
 /**
- * 결과 박스에 내용을 표시
+ * 공통 유틸 2) 결과 박스 출력
+ * 각 기능 함수가 만든 HTML 문자열을 결과 영역에 반영한다.
  */
 function showResult(html) {
     document.getElementById("result-box").innerHTML = html;
 }
 
 /**
- * 로그 항목을 추가 (최대 10개)
+ * 공통 유틸 3) 로그 추가
+ * 최신 로그를 앞에 넣고, 10개를 넘으면 가장 오래된 로그를 버린다.
  */
 function addLog(message, type, elapsedMs) {
     logs.unshift({ message, type, elapsedMs, time: new Date() });
-    // 최대 10개만 유지
+    // 화면 복잡도를 줄이기 위해 최근 10건만 유지
     if (logs.length > 10) logs.pop();
     renderLogs();
 }
 
 /**
- * 로그 목록을 화면에 렌더링
+ * 공통 유틸 4) 로그 렌더링
+ * logs 배열 상태를 그대로 HTML 리스트로 바꿔 화면에 그린다.
  */
 function renderLogs() {
     const logList = document.getElementById("log-list");
@@ -67,14 +73,16 @@ function renderLogs() {
 }
 
 /**
- * 버튼 비활성화/활성화 토글
+ * 공통 유틸 5) 버튼 잠금/해제
+ * 요청 처리 중 중복 클릭으로 실험 결과가 섞이지 않게 막는다.
  */
 function setButtonsDisabled(disabled) {
     document.querySelectorAll(".btn").forEach((btn) => (btn.disabled = disabled));
 }
 
 /**
- * Redis 방식으로 쿠폰 발급
+ * 사용자 액션 1) Redis 방식 발급
+ * Redis 전용 API를 호출하고, 성공/실패/시간을 결과와 로그에 반영한다.
  */
 async function issueCouponRedis() {
     setButtonsDisabled(true);
@@ -109,7 +117,8 @@ async function issueCouponRedis() {
 }
 
 /**
- * DB 방식으로 쿠폰 발급
+ * 사용자 액션 2) DB 방식 발급
+ * DB 전용 API를 호출하고, Redis 방식과 같은 형식으로 결과를 보여준다.
  */
 async function issueCouponDB() {
     setButtonsDisabled(true);
@@ -144,7 +153,9 @@ async function issueCouponDB() {
 }
 
 /**
- * 1000명 동시 요청 시뮬레이션
+ * 사용자 액션 3) 벌크 테스트
+ * 백엔드가 수행한 1000명 동시 요청 실험 결과를 받아,
+ * Redis vs DB 처리 시간과 성공/거절 수를 비교해 보여준다.
  */
 async function bulkTest() {
     setButtonsDisabled(true);
@@ -156,7 +167,7 @@ async function bulkTest() {
         const res = await fetch(`${API_BASE}/coupon/bulk-test`, { method: "POST" });
         const data = await res.json();
 
-        // 어느 방식이 빠른지 비교
+        // 어떤 방식이 더 빠른지 계산해서 요약 문구로 보여준다.
         const faster = data.redis_elapsed_ms < data.db_elapsed_ms ? "Redis" : "DB";
         const ratio = faster === "Redis"
             ? (data.db_elapsed_ms / data.redis_elapsed_ms).toFixed(1)
@@ -205,7 +216,8 @@ async function bulkTest() {
 }
 
 /**
- * 쿠폰 재고를 100개로 초기화
+ * 사용자 액션 4) 초기화
+ * 실습을 다시 시작하기 쉽게 Redis/DB 재고를 100으로 맞춘다.
  */
 async function resetCoupon() {
     setButtonsDisabled(true);
@@ -228,7 +240,7 @@ async function resetCoupon() {
     setButtonsDisabled(false);
 }
 
-// 페이지 로드 시 재고 조회
+// 페이지 시작 시 현재 재고를 먼저 보여준다.
 refreshCount();
-// 3초마다 재고 자동 갱신
+// 학습 중 값 변화를 바로 보도록 3초마다 자동 갱신한다.
 setInterval(refreshCount, 3000);
