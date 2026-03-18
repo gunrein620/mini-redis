@@ -173,13 +173,18 @@ async def issue_coupon_redis() -> CouponResponse:
             )
 
         # 3) 실제 발급 성공 건은 DB에 이력으로 남기고, Redis에 TTL 15초로 쿠폰 코드를 등록한다.
+        #    DB 재고도 함께 감소시켜 Redis/DB 재고를 동기화한다.
         now = datetime.now()
         expires = now.replace(microsecond=0) + timedelta(seconds=15)
         async with db_pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "INSERT INTO coupons (coupon_code, issued_at, expires_at) VALUES ($1, $2, $3) RETURNING id",
-                coupon_code, now, expires,
-            )
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "INSERT INTO coupons (coupon_code, issued_at, expires_at) VALUES ($1, $2, $3) RETURNING id",
+                    coupon_code, now, expires,
+                )
+                await conn.execute(
+                    "UPDATE coupon_stock SET count = count - 1 WHERE id = 1 AND count > 0"
+                )
         # Redis에 coupon_code 키로 "valid" 저장 + TTL 15초 → 15초 후 자동 만료
         await redis_set(coupon_code, "valid", ttl=15)
 
@@ -237,6 +242,8 @@ async def issue_coupon_db() -> CouponResponse:
 
         # Redis에 coupon_code 키로 "valid" 저장 + TTL 15초
         await redis_set(coupon_code, "valid", ttl=15)
+        # Redis 재고도 함께 감소시켜 Redis/DB 재고를 동기화한다.
+        await redis_decr("coupon_stock")
 
         elapsed = (time.perf_counter() - start) * 1000
         return CouponResponse(
@@ -320,33 +327,15 @@ async def bulk_test() -> BulkTestResponse:
     """1000명 동시 요청으로 Redis 방식과 DB 방식을 같은 조건에서 비교한다."""
     total = 1000
 
-    # A. 실험 준비: 현재 재고를 읽어 두고(음수 방지), 두 방식 모두 같은 시작점으로 맞춘다.
-    redis_stock = 100
+    # A. 실험 준비: 양쪽 재고를 동일한 시작점(100)으로 맞추고, 발급 이력을 초기화한다.
+    stock = 100
     try:
-        value = await redis_get("coupon_stock")
-        if value is not None:
-            redis_stock = max(int(value), 0)
-    except Exception:
-        pass
-
-    # DB 현재 재고도 확인
-    db_stock = 100
-    try:
-        async with db_pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT count FROM coupon_stock WHERE id = 1")
-            if row:
-                db_stock = max(row["count"], 0)
-    except Exception:
-        pass
-
-    # Redis/DB를 동일 재고로 맞추고, 발급 이력은 삭제
-    try:
-        await redis_set("coupon_stock", str(redis_stock))
+        await redis_set("coupon_stock", str(stock))
     except Exception:
         pass
     try:
         async with db_pool.acquire() as conn:
-            await conn.execute("UPDATE coupon_stock SET count = $1 WHERE id = 1", db_stock)
+            await conn.execute("UPDATE coupon_stock SET count = $1 WHERE id = 1", stock)
             await conn.execute("DELETE FROM coupons")
     except Exception:
         pass
@@ -372,10 +361,14 @@ async def bulk_test() -> BulkTestResponse:
     await asyncio.gather(*[redis_request() for _ in range(total)])
     redis_elapsed = (time.perf_counter() - redis_start) * 1000
 
-    # C. DB 방식 실험 전, DB 재고를 같은 시작 상태로 다시 세팅
+    # C. DB 방식 실험 전, Redis/DB 재고를 모두 같은 시작 상태로 다시 세팅
+    try:
+        await redis_set("coupon_stock", str(stock))
+    except Exception:
+        pass
     try:
         async with db_pool.acquire() as conn:
-            await conn.execute("UPDATE coupon_stock SET count = $1 WHERE id = 1", db_stock)
+            await conn.execute("UPDATE coupon_stock SET count = $1 WHERE id = 1", stock)
             await conn.execute("DELETE FROM coupons")
     except Exception:
         pass
