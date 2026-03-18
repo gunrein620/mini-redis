@@ -3,210 +3,192 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>선착순 쿠폰 이벤트</title>
+    <title>mini-redis — 선착순 쿠폰</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['"Pretendard"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
     <style>
-        @keyframes fade-up { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-up { animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+        *, *::before, *::after { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Pretendard', system-ui, sans-serif; background: #f0f6ff; color: #1a1a2e; margin: 0; }
 
-        @keyframes pulse-glow { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
-        .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
-
-        .glass { background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.06); }
-        .glass-strong { background: rgba(255,255,255,0.06); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); border: 1px solid rgba(255,255,255,0.1); }
-
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        @keyframes fade-up { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-up { animation: fade-up 0.8s cubic-bezier(0.25, 1, 0.5, 1) both; }
 
         @keyframes spin { to { transform: rotate(360deg); } }
-        .loading {
-            display: inline-block; width: 16px; height: 16px;
-            border: 2px solid rgba(255,255,255,0.2); border-top-color: #a78bfa;
-            border-radius: 50%; animation: spin 0.6s linear infinite;
-            vertical-align: middle; margin-right: 8px;
+        .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(0,0,0,0.1); border-top-color: #0A84FF; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 8px; }
+
+        /* 글래스 패널 (라이트) */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            border-radius: 18px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
         }
 
-        .result-success { color: #4ade80; }
-        .result-fail { color: #f87171; }
-        .result-info { color: #818cf8; }
-        .result-time { color: #fbbf24; font-size: 0.85rem; margin-top: 0.4rem; }
-        .result-detail { color: rgba(255,255,255,0.4); font-size: 0.75rem; margin-top: 0.4rem; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.4rem; }
-
-        .bulk-result { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-        .bulk-column h3 { font-size: 0.95rem; margin-bottom: 0.5rem; color: rgba(255,255,255,0.8); }
-        .bulk-column p { font-size: 0.85rem; margin-bottom: 0.2rem; color: rgba(255,255,255,0.6); }
-        .bulk-summary {
-            margin-top: 1rem; padding: 0.75rem 1rem;
-            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 12px; text-align: center; font-size: 0.9rem; color: #fbbf24;
+        /* 터미널 윈도우 (라이트) */
+        .terminal-window {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            border-radius: 14px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
         }
 
-        .coupon-list { max-height: 160px; overflow-y: auto; margin: 0.4rem 0; }
-        .coupon-item { font-size: 0.78rem; padding: 0.25rem 0; color: rgba(255,255,255,0.5); font-family: 'SF Mono', 'Consolas', monospace; }
-        .ttl-badge {
-            display: inline-block; background: rgba(139,92,246,0.15); color: #a78bfa;
-            padding: 0.1rem 0.4rem; border-radius: 6px; font-size: 0.7rem; margin-left: 0.3rem;
-            border: 1px solid rgba(139,92,246,0.2);
-        }
+        /* Apple 스타일 버튼 */
+        .btn-primary { background: #0A84FF; color: #fff; border-radius: 980px; font-weight: 600; font-size: 15px; padding: 12px 28px; transition: all 0.2s; border: none; cursor: pointer; box-shadow: 0 4px 14px rgba(10,132,255,0.3); }
+        .btn-primary:hover { background: #409CFF; box-shadow: 0 6px 20px rgba(10,132,255,0.4); }
+        .btn-primary:active { transform: scale(0.97); }
+        .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 
-        .placeholder { color: rgba(255,255,255,0.2); text-align: center; }
+        .btn-secondary { background: rgba(255,255,255,0.6); color: #1a1a2e; border-radius: 980px; font-weight: 600; font-size: 15px; padding: 12px 28px; transition: all 0.2s; border: 1px solid rgba(0,0,0,0.08); cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .btn-secondary:hover { background: rgba(255,255,255,0.8); }
+        .btn-secondary:active { transform: scale(0.97); }
+        .btn-secondary:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 
-        .log-item { padding: 0.55rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 0.82rem; display: flex; justify-content: space-between; align-items: center; }
+        .btn-text { color: #0A84FF; font-weight: 600; font-size: 15px; background: none; border: none; cursor: pointer; transition: color 0.2s; }
+        .btn-text:hover { color: #006ee6; }
+        .btn-text:disabled { opacity: 0.35; cursor: not-allowed; }
+
+        /* 트래픽 라이트 */
+        .traffic-light { width: 12px; height: 12px; border-radius: 50%; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 3px; }
+
+        /* app.js 호환 클래스 (라이트) */
+        .result-success { color: #22a352; font-weight: 600; }
+        .result-fail { color: #e63939; font-weight: 600; }
+        .result-info { color: #0A84FF; font-weight: 600; }
+        .result-time { color: #d97706; font-size: 14px; margin-top: 6px; }
+        .result-detail { color: #6b7280; font-size: 12px; margin-top: 8px; line-height: 1.6; border-top: 1px solid rgba(0,0,0,0.06); padding-top: 8px; }
+
+        .bulk-result { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .bulk-column h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; color: #1a1a2e; }
+        .bulk-column p { font-size: 13px; margin-bottom: 3px; color: #6b7280; }
+        .bulk-summary { margin-top: 16px; padding: 14px 20px; background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.2); border-radius: 12px; text-align: center; font-size: 14px; color: #d97706; font-weight: 600; }
+
+        .coupon-list { max-height: 140px; overflow-y: auto; margin: 6px 0; }
+        .coupon-item { font-size: 12px; padding: 3px 0; color: #6b7280; font-family: 'SF Mono', 'Menlo', monospace; }
+        .ttl-badge { display: inline-block; background: rgba(10,132,255,0.1); color: #0A84FF; padding: 2px 8px; border-radius: 6px; font-size: 11px; margin-left: 4px; font-weight: 600; }
+
+        .placeholder { color: #9ca3af; text-align: center; }
+
+        .log-item { padding: 10px 0; font-size: 13px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(0,0,0,0.04); }
         .log-item:last-child { border-bottom: none; }
-        .log-item .log-msg { flex: 1; color: rgba(255,255,255,0.4); }
-        .log-item .log-time { color: #fbbf24; font-size: 0.75rem; white-space: nowrap; margin-left: 0.5rem; }
-        .log-item.success .log-msg { color: #4ade80; }
-        .log-item.fail .log-msg { color: #f87171; }
-        .log-item.info .log-msg { color: #818cf8; }
+        .log-item .log-msg { flex: 1; color: #6b7280; }
+        .log-item .log-time { color: #d97706; font-size: 12px; white-space: nowrap; margin-left: 8px; font-family: 'SF Mono', monospace; }
+        .log-item.success .log-msg { color: #22a352; }
+        .log-item.fail .log-msg { color: #e63939; }
+        .log-item.info .log-msg { color: #0A84FF; }
 
-        @media (max-width: 480px) {
-            .bulk-result { grid-template-columns: 1fr; }
-        }
+        @media (max-width: 480px) { .bulk-result { grid-template-columns: 1fr; } }
     </style>
 </head>
-<body class="bg-[#0a0a0f] text-white font-sans min-h-screen overflow-x-hidden">
+<body>
 
-    <!-- 배경 -->
-    <div class="fixed inset-0 overflow-hidden pointer-events-none">
-        <div class="absolute -top-40 -left-40 w-[500px] h-[500px] bg-violet-600/15 rounded-full blur-[120px] animate-pulse-glow"></div>
-        <div class="absolute top-1/4 -right-20 w-[400px] h-[400px] bg-indigo-500/10 rounded-full blur-[100px] animate-pulse-glow" style="animation-delay: 1s;"></div>
-        <div class="absolute bottom-0 left-1/3 w-[350px] h-[350px] bg-fuchsia-500/8 rounded-full blur-[100px] animate-pulse-glow" style="animation-delay: 2s;"></div>
-        <div class="absolute inset-0 opacity-[0.02]" style="background-image: linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 60px 60px;"></div>
-    </div>
+    <div class="relative max-w-[680px] mx-auto px-6">
 
-    <div class="relative max-w-2xl mx-auto px-5 py-10">
-
-        <!-- 헤더 -->
-        <header class="mb-10 animate-fade-up">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="relative">
-                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/25">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
-                        </svg>
-                    </div>
-                    <div class="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#0a0a0f] animate-pulse"></div>
-                </div>
-                <div>
-                    <p class="text-[10px] font-bold tracking-[0.2em] uppercase text-violet-400/80">Mini Redis</p>
-                    <h1 class="text-2xl font-bold tracking-tight text-white/95">선착순 쿠폰 이벤트</h1>
-                </div>
-            </div>
-            <p class="text-sm text-white/35 leading-relaxed pl-[52px]">
-                Mini Redis vs PostgreSQL 성능 비교
+        <!-- 히어로 -->
+        <section class="pt-24 pb-16 text-center fade-up">
+            <p class="text-[#0A84FF] text-sm font-semibold tracking-wide mb-4">Mini Redis Project</p>
+            <h1 class="text-5xl sm:text-6xl font-bold tracking-tight leading-[1.08] text-[#1a1a2e] mb-5">
+                선착순 쿠폰.<br>
+                <span class="bg-gradient-to-r from-[#0A84FF] to-[#38bdf8] bg-clip-text text-transparent">빠르게, 안전하게.</span>
+            </h1>
+            <p class="text-lg text-[#6b7280] leading-relaxed max-w-md mx-auto">
+                Redis의 atomic 연산과 PostgreSQL의 행 잠금을<br>같은 조건에서 비교합니다.
             </p>
-        </header>
+        </section>
 
         <!-- 재고 현황 -->
-        <section class="mb-8 animate-fade-up" style="animation-delay: 0.05s;">
-            <p class="text-xs font-bold tracking-[0.15em] uppercase text-white/30 mb-3">남은 쿠폰 수량</p>
-            <div class="grid grid-cols-2 gap-3">
-                <div class="glass rounded-2xl p-5 text-center">
-                    <span class="text-[10px] font-bold tracking-[0.15em] uppercase text-emerald-400/70 block mb-2">Redis 재고</span>
-                    <span class="text-3xl font-bold text-white/90 tabular-nums" id="redis-count">-</span>
+        <section class="mb-8 fade-up" style="animation-delay: 0.1s;">
+            <div class="glass-panel grid grid-cols-2">
+                <div class="p-6 text-center">
+                    <div class="flex items-center justify-center gap-2 mb-3">
+                        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/redis/redis-original.svg" class="w-5 h-5" alt="">
+                        <span class="text-xs font-semibold text-[#6b7280] uppercase tracking-wider">Redis</span>
+                    </div>
+                    <span class="text-4xl font-bold text-[#1a1a2e] tabular-nums tracking-tight" id="redis-count">—</span>
                 </div>
-                <div class="glass rounded-2xl p-5 text-center">
-                    <span class="text-[10px] font-bold tracking-[0.15em] uppercase text-blue-400/70 block mb-2">DB 재고</span>
-                    <span class="text-3xl font-bold text-white/90 tabular-nums" id="db-count">-</span>
+                <div class="p-6 text-center border-l border-black/[0.06]">
+                    <div class="flex items-center justify-center gap-2 mb-3">
+                        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg" class="w-5 h-5" alt="">
+                        <span class="text-xs font-semibold text-[#6b7280] uppercase tracking-wider">PostgreSQL</span>
+                    </div>
+                    <span class="text-4xl font-bold text-[#1a1a2e] tabular-nums tracking-tight" id="db-count">—</span>
                 </div>
             </div>
         </section>
 
-        <!-- 액션 버튼 -->
-        <section class="mb-8 animate-fade-up" style="animation-delay: 0.1s;">
-            <div class="grid grid-cols-2 gap-3">
-                <button class="btn py-4 rounded-2xl text-sm font-semibold
-                               bg-gradient-to-r from-violet-600 to-indigo-600
-                               hover:from-violet-500 hover:to-indigo-500
-                               hover:shadow-xl hover:shadow-violet-500/25
-                               active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed
-                               transition-all duration-300 flex items-center justify-center gap-2"
-                       id="btn-redis" onclick="issueCouponRedis()">
-                    <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/redis/redis-original.svg" class="w-5 h-5 flex-shrink-0" alt="Redis"> Redis로 발급
+        <!-- 액션 버튼 그룹 -->
+        <section class="mb-8 fade-up" style="animation-delay: 0.15s;">
+            <div class="flex flex-col gap-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <button class="btn btn-primary flex items-center justify-center gap-2" id="btn-redis" onclick="issueCouponRedis()">
+                        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/redis/redis-original.svg" class="w-4 h-4 brightness-0 invert" alt="">
+                        Redis 발급
+                    </button>
+                    <button class="btn btn-secondary flex items-center justify-center gap-2" id="btn-db" onclick="issueCouponDB()">
+                        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg" class="w-4 h-4 brightness-0 invert" alt="">
+                        DB 발급
+                    </button>
+                </div>
+                <button class="btn btn-secondary flex items-center justify-center gap-2 w-full" id="btn-bulk" onclick="bulkTest()">
+                    1000명 동시 테스트
                 </button>
-                <button class="btn py-4 rounded-2xl text-sm font-semibold
-                               bg-gradient-to-r from-emerald-600 to-emerald-500
-                               hover:from-emerald-500 hover:to-emerald-400
-                               hover:shadow-xl hover:shadow-emerald-500/25
-                               active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed
-                               transition-all duration-300 flex items-center justify-center gap-2"
-                       id="btn-db" onclick="issueCouponDB()">
-                    <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg" class="w-5 h-5 flex-shrink-0" alt="PostgreSQL"> DB로 발급
-                </button>
-                <button class="btn col-span-2 py-4 rounded-2xl text-sm font-semibold
-                               bg-gradient-to-r from-amber-600 to-orange-500
-                               hover:from-amber-500 hover:to-orange-400
-                               hover:shadow-xl hover:shadow-amber-500/25
-                               active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed
-                               transition-all duration-300 flex items-center justify-center gap-2"
-                       id="btn-bulk" onclick="bulkTest()">
-                    🚀 1000명 동시 테스트
-                </button>
-                <button class="btn col-span-2 py-4 rounded-2xl text-sm font-semibold
-                               bg-gradient-to-r from-purple-600 to-violet-500
-                               hover:from-purple-500 hover:to-violet-400
-                               hover:shadow-xl hover:shadow-purple-500/25
-                               active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed
-                               transition-all duration-300 flex items-center justify-center gap-2"
-                       id="btn-query" onclick="queryValidCoupons()">
-                    🔍 유효 쿠폰 조회
-                </button>
-                <button class="btn col-span-2 py-3.5 rounded-2xl text-sm font-semibold
-                               glass-strong hover:border-white/20
-                               active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed
-                               transition-all duration-300 flex items-center justify-center gap-2 text-white/50"
-                       id="btn-reset" onclick="resetCoupon()">
-                    🔄 재고 초기화
-                </button>
+                <div class="grid grid-cols-2 gap-3">
+                    <button class="btn btn-secondary flex items-center justify-center gap-2 w-full" id="btn-query" onclick="queryValidCoupons()">
+                        유효 쿠폰 조회
+                    </button>
+                    <button class="btn btn-text flex items-center justify-center gap-2 w-full" id="btn-reset" onclick="resetCoupon()">
+                        재고 초기화
+                    </button>
+                </div>
             </div>
         </section>
 
-        <!-- 결과 표시 -->
-        <section class="mb-8 animate-fade-up" style="animation-delay: 0.15s;">
-            <p class="text-xs font-bold tracking-[0.15em] uppercase text-white/30 mb-3">결과</p>
-            <div class="glass rounded-2xl p-5 min-h-[80px]" id="result-box">
-                <p class="placeholder text-sm py-4">버튼을 클릭하여 테스트해보세요</p>
+        <!-- 결과: 터미널 윈도우 -->
+        <section class="mb-8 fade-up" style="animation-delay: 0.2s;">
+            <div class="terminal-window">
+                <!-- 트래픽 라이트 -->
+                <div class="flex items-center gap-2 px-4 py-3 border-b border-black/[0.06]">
+                    <div class="traffic-light bg-[#FF5F57]"></div>
+                    <div class="traffic-light bg-[#FEBC2E]"></div>
+                    <div class="traffic-light bg-[#28C840]"></div>
+                    <span class="flex-1 text-center text-xs text-[#9ca3af] font-medium -ml-14">결과</span>
+                </div>
+                <div class="p-5 min-h-[80px] font-mono text-sm" id="result-box">
+                    <p class="placeholder py-3 font-sans">버튼을 클릭하여 테스트해보세요</p>
+                </div>
             </div>
         </section>
 
-        <!-- 로그 영역 -->
-        <section class="mb-8 animate-fade-up" style="animation-delay: 0.2s;">
-            <div class="flex items-center gap-2 mb-3">
-                <p class="text-xs font-bold tracking-[0.15em] uppercase text-white/30">요청 기록</p>
-                <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 border border-violet-500/20" id="log-count">(0/10)</span>
-            </div>
-            <div class="glass rounded-2xl p-4 max-h-[280px] overflow-y-auto" id="log-list">
-                <p class="placeholder text-sm py-2">아직 요청 기록이 없습니다</p>
+        <!-- 로그: 터미널 윈도우 -->
+        <section class="mb-12 fade-up" style="animation-delay: 0.25s;">
+            <div class="terminal-window">
+                <div class="flex items-center gap-2 px-4 py-3 border-b border-black/[0.06]">
+                    <div class="traffic-light bg-[#FF5F57]"></div>
+                    <div class="traffic-light bg-[#FEBC2E]"></div>
+                    <div class="traffic-light bg-[#28C840]"></div>
+                    <span class="flex-1 text-center text-xs text-[#9ca3af] font-medium -ml-14">요청 기록 <span id="log-count">(0/10)</span></span>
+                </div>
+                <div class="px-5 py-2 max-h-[240px] overflow-y-auto" id="log-list">
+                    <p class="placeholder py-4 font-sans text-sm">아직 요청 기록이 없습니다</p>
+                </div>
             </div>
         </section>
 
-        <!-- TTL 데모 링크 -->
-        <div class="text-center animate-fade-up" style="animation-delay: 0.25s;">
-            <a href="./mc-frontend/"
-               class="inline-flex items-center gap-2 text-sm text-violet-400/60 hover:text-violet-400 transition-colors duration-200">
-                <span>🎫 쿠폰 TTL 데모 페이지 바로가기</span>
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                </svg>
+        <!-- 네비게이션 -->
+        <div class="text-center pb-16 fade-up" style="animation-delay: 0.3s;">
+            <a href="./mc-frontend/" class="btn-text inline-flex items-center gap-1.5 text-base">
+                쿠폰 TTL 데모
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
             </a>
         </div>
 
     </div>
-
     <script src="app.js?v=2"></script>
 </body>
 </html>

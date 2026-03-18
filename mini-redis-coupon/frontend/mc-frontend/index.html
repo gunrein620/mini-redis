@@ -3,141 +3,139 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mini Redis - Coupon TTL Demo</title>
+    <title>mini-redis — 쿠폰 TTL Demo</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['"Pretendard"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
     <style>
-        @keyframes fade-up { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-up { animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+        *, *::before, *::after { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Pretendard', system-ui, sans-serif; background: #f0f6ff; color: #1a1a2e; margin: 0; }
 
-        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        @keyframes fade-up { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-up { animation: fade-up 0.8s cubic-bezier(0.25, 1, 0.5, 1) both; }
+        .animate-fade-up { animation: fade-up 0.5s cubic-bezier(0.25, 1, 0.5, 1) both; }
 
-        @keyframes scale-in { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
-        .animate-scale-in { animation: scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes hero-glow { 0%, 100% { opacity: 0.4; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.05); } }
 
-        @keyframes pulse-glow { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
-        .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+        @keyframes scale-in { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+        .animate-scale-in { animation: scale-in 0.4s cubic-bezier(0.25, 1, 0.5, 1) both; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 0.8s linear infinite; }
 
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
         .animate-float { animation: float 3s ease-in-out infinite; }
 
-        @keyframes particle-rise {
-            0% { opacity: 1; transform: translateY(0) scale(1); }
-            100% { opacity: 0; transform: translateY(-120px) scale(0); }
+        @keyframes pulse-glow { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.5; } }
+
+        /* 글래스 패널 (라이트) */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            border-radius: 18px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
         }
+
+        /* Apple 버튼 */
+        .btn-primary { background: #0A84FF; color: #fff; border-radius: 980px; font-weight: 600; font-size: 15px; padding: 14px 28px; transition: all 0.2s; border: none; cursor: pointer; box-shadow: 0 4px 14px rgba(10,132,255,0.3); }
+        .btn-primary:hover { background: #409CFF; box-shadow: 0 6px 20px rgba(10,132,255,0.4); }
+        .btn-primary:active { transform: scale(0.97); }
+        .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+        .btn-secondary { background: rgba(255,255,255,0.6); color: #1a1a2e; border-radius: 980px; font-weight: 600; font-size: 15px; padding: 14px 28px; transition: all 0.2s; border: 1px solid rgba(0,0,0,0.08); cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .btn-secondary:hover { background: rgba(255,255,255,0.8); }
+        .btn-secondary:active { transform: scale(0.97); }
+
+        .btn-text { color: #0A84FF; font-weight: 600; font-size: 15px; background: none; border: none; cursor: pointer; transition: color 0.2s; }
+        .btn-text:hover { color: #006ee6; }
+
+        /* 쿠폰 카드 (라이트) */
+        .coupon-card {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            border-radius: 18px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+            transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+        .coupon-card:hover { box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); }
+
+        .coupon-notch-left { position: absolute; left: -12px; width: 24px; height: 24px; border-radius: 50%; background: transparent; }
 
         .circle-timer { transform: rotate(-90deg); }
         .circle-timer circle { transition: stroke-dashoffset 1s linear, stroke 0.5s ease; }
 
-        .coupon-notch-left { position: absolute; left: -12px; width: 24px; height: 24px; border-radius: 50%; background: #0a0a0f; }
+        /* 터미널 윈도우 */
+        .terminal-window {
+            background: rgba(30, 30, 32, 0.85);
+            backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.05);
+        }
+        .traffic-light { width: 12px; height: 12px; border-radius: 50%; }
 
-        .glass { background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.06); }
-        .glass-strong { background: rgba(255,255,255,0.06); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); border: 1px solid rgba(255,255,255,0.1); }
-
-        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
 
         #particles { position: fixed; inset: 0; pointer-events: none; z-index: 100; overflow: hidden; }
     </style>
 </head>
-<body class="bg-[#0a0a0f] text-white font-sans min-h-screen overflow-x-hidden">
+<body>
 
     <!-- 파티클 -->
     <div id="particles"></div>
 
-    <!-- 배경 -->
-    <div class="fixed inset-0 overflow-hidden pointer-events-none">
-        <div class="absolute -top-40 -left-40 w-[500px] h-[500px] bg-violet-600/15 rounded-full blur-[120px] animate-pulse-glow"></div>
-        <div class="absolute top-1/4 -right-20 w-[400px] h-[400px] bg-indigo-500/10 rounded-full blur-[100px] animate-pulse-glow" style="animation-delay: 1s;"></div>
-        <div class="absolute bottom-0 left-1/3 w-[350px] h-[350px] bg-fuchsia-500/8 rounded-full blur-[100px] animate-pulse-glow" style="animation-delay: 2s;"></div>
-        <div class="absolute inset-0 opacity-[0.02]" style="background-image: linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 60px 60px;"></div>
-    </div>
+    <div class="relative max-w-[680px] mx-auto px-6">
 
-    <div class="relative max-w-2xl mx-auto px-5 py-10">
-
-        <!-- 헤더 -->
-        <header class="mb-10 animate-fade-up">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="relative">
-                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/25">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
-                        </svg>
-                    </div>
-                    <div class="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#0a0a0f] animate-pulse"></div>
-                </div>
-                <div>
-                    <p class="text-[10px] font-bold tracking-[0.2em] uppercase text-violet-400/80">Mini Redis</p>
-                    <h1 class="text-2xl font-bold tracking-tight text-white/95">Coupon TTL Demo</h1>
-                </div>
-            </div>
-            <p class="text-sm text-white/35 leading-relaxed pl-[52px]">
-                Redis TTL 기반 쿠폰 만료 시스템 — 실시간 TTL 카운트다운
+        <!-- 히어로 -->
+        <section class="pt-20 pb-12 text-center fade-up">
+            <p class="text-[#0A84FF] text-sm font-semibold tracking-wide mb-4">Mini Redis Project</p>
+            <h1 class="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.08] text-[#1a1a2e] mb-4">
+                쿠폰 TTL.<br>
+                <span class="bg-gradient-to-r from-[#0A84FF] to-[#38bdf8] bg-clip-text text-transparent">실시간으로 확인하세요.</span>
+            </h1>
+            <p class="text-base text-[#6b7280] leading-relaxed max-w-sm mx-auto">
+                Redis TTL 기반 쿠폰 만료 시스템<br>실시간 카운트다운을 눈으로 확인합니다.
             </p>
-        </header>
+        </section>
 
-        <!-- 조회 버튼 영역 -->
-        <div class="flex gap-3 mb-8 animate-fade-up" style="animation-delay: 0.1s;">
-            <button
-                id="btn-search"
-                onclick="fetchValidCoupons()"
-                class="flex-1 py-4 rounded-2xl text-sm font-semibold
-                       bg-gradient-to-r from-violet-600 to-indigo-600
-                       hover:from-violet-500 hover:to-indigo-500
-                       hover:shadow-xl hover:shadow-violet-500/25
-                       active:scale-[0.97]
-                       disabled:opacity-30 disabled:cursor-not-allowed
-                       transition-all duration-300 flex items-center justify-center gap-2"
-            >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                </svg>
-                유효 쿠폰 조회
-            </button>
-            <button
-                id="btn-refresh"
-                onclick="fetchValidCoupons()"
-                class="px-5 py-4 rounded-2xl text-sm font-semibold
-                       glass-strong hover:border-white/20
-                       active:scale-[0.95]
-                       transition-all duration-300 flex items-center justify-center"
-                title="새로고침"
-            >
-                <svg class="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-            </button>
-        </div>
+        <!-- 조회 버튼 -->
+        <section class="mb-8 fade-up" style="animation-delay: 0.1s;">
+            <div class="flex gap-3">
+                <button id="btn-search" onclick="fetchValidCoupons()" class="btn-primary flex-1 flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    유효 쿠폰 조회
+                </button>
+                <button id="btn-refresh" onclick="fetchValidCoupons()" class="btn-secondary flex items-center justify-center px-5" title="새로고침">
+                    <svg class="w-4 h-4 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                </button>
+            </div>
+        </section>
 
         <!-- Redis vs DB 비교 카드 -->
-        <div id="compare-section" class="mb-6" style="display: none;">
-            <div class="grid grid-cols-2 gap-3 animate-fade-up">
-                <div class="glass rounded-2xl p-4 text-center">
-                    <p class="text-[10px] font-bold tracking-[0.15em] uppercase text-emerald-400/70 mb-1">Redis (TTL 기반)</p>
-                    <p id="redis-count" class="text-2xl font-bold text-white/90">-</p>
-                    <p id="redis-elapsed" class="text-[10px] text-white/25 mt-1">-</p>
+        <section id="compare-section" class="mb-8 fade-up" style="display: none; animation-delay: 0.15s;">
+            <div class="glass-panel grid grid-cols-2">
+                <div class="p-5 text-center">
+                    <div class="flex items-center justify-center gap-2 mb-2">
+                        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/redis/redis-original.svg" class="w-4 h-4" alt="">
+                        <span class="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wider">Redis (TTL)</span>
+                    </div>
+                    <span class="text-3xl font-bold text-[#1a1a2e] tabular-nums tracking-tight" id="redis-count">—</span>
+                    <p id="redis-elapsed" class="text-[11px] text-[#9ca3af] mt-1 tabular-nums">—</p>
                 </div>
-                <div class="glass rounded-2xl p-4 text-center">
-                    <p class="text-[10px] font-bold tracking-[0.15em] uppercase text-blue-400/70 mb-1">DB (expires_at 기반)</p>
-                    <p id="db-count" class="text-2xl font-bold text-white/90">-</p>
-                    <p id="db-elapsed" class="text-[10px] text-white/25 mt-1">-</p>
+                <div class="p-5 text-center border-l border-black/[0.06]">
+                    <div class="flex items-center justify-center gap-2 mb-2">
+                        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg" class="w-4 h-4" alt="">
+                        <span class="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wider">DB (expires_at)</span>
+                    </div>
+                    <span class="text-3xl font-bold text-[#1a1a2e] tabular-nums tracking-tight" id="db-count">—</span>
+                    <p id="db-elapsed" class="text-[11px] text-[#9ca3af] mt-1 tabular-nums">—</p>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- 결과 영역 -->
         <section id="result-section" style="display: none;">
@@ -145,35 +143,39 @@
         </section>
 
         <!-- 빈 상태 -->
-        <section id="empty-state" class="mt-20 text-center animate-fade-up" style="animation-delay: 0.2s;">
+        <section id="empty-state" class="mt-16 text-center fade-up" style="animation-delay: 0.2s;">
             <div class="animate-float">
-                <div class="w-24 h-24 mx-auto mb-8 rounded-3xl glass flex items-center justify-center relative">
-                    <span class="text-5xl">🎫</span>
-                    <div class="absolute inset-0 rounded-3xl bg-gradient-to-br from-violet-500/10 to-transparent"></div>
+                <div class="w-20 h-20 mx-auto mb-6 rounded-[22px] glass-panel flex items-center justify-center">
+                    <span class="text-4xl">🎫</span>
                 </div>
             </div>
-            <p class="text-base text-white/25 leading-relaxed">
+            <p class="text-[15px] text-[#6b7280] leading-relaxed">
                 조회 버튼을 누르면<br>현재 유효한 쿠폰 목록을 확인할 수 있어요
             </p>
-            <p class="text-xs text-white/15 mt-3">
+            <p class="text-xs text-[#9ca3af] mt-3">
                 먼저 메인 페이지에서 쿠폰을 발급해주세요
             </p>
         </section>
 
+        <!-- 네비게이션 -->
+        <div class="text-center py-12 fade-up" style="animation-delay: 0.3s;">
+            <a href="../" class="btn-text inline-flex items-center gap-1.5 text-base">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                메인으로 돌아가기
+            </a>
+        </div>
+
     </div>
 
     <!-- 모달 -->
-    <div id="modal-overlay" class="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center transition-opacity duration-300" style="display:none;">
-        <div id="modal-box" class="animate-scale-in glass-strong rounded-3xl p-10 max-w-sm w-full mx-5 text-center shadow-2xl shadow-black/50">
-            <div id="modal-icon" class="w-20 h-20 mx-auto mb-6 rounded-2xl flex items-center justify-center text-4xl"></div>
-            <p id="modal-title" class="text-xl font-bold text-white/90 mb-2"></p>
-            <p id="modal-desc" class="text-sm text-white/40 mb-8"></p>
-            <button onclick="closeModal()" class="w-full px-6 py-3.5 rounded-2xl text-sm font-semibold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.97] transition-all duration-200 shadow-lg shadow-violet-600/20">
-                확인
-            </button>
+    <div id="modal-overlay" class="fixed inset-0 bg-white/40 backdrop-blur-xl z-50 flex items-center justify-center transition-opacity duration-300" style="display:none;">
+        <div id="modal-box" class="animate-scale-in glass-panel p-10 max-w-sm w-full mx-5 text-center" style="border-radius: 22px;">
+            <div id="modal-icon" class="w-20 h-20 mx-auto mb-6 rounded-[18px] flex items-center justify-center text-4xl"></div>
+            <p id="modal-title" class="text-xl font-bold text-[#1a1a2e] mb-2"></p>
+            <p id="modal-desc" class="text-sm text-[#6b7280] mb-8"></p>
+            <button onclick="closeModal()" class="btn-primary w-full">확인</button>
         </div>
     </div>
-
     <script src="app.js"></script>
 </body>
 </html>
