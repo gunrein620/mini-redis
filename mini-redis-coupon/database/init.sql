@@ -9,7 +9,8 @@ DROP TABLE IF EXISTS coupon_stock;
 CREATE TABLE coupons (
     id SERIAL PRIMARY KEY,              -- 쿠폰 발급 ID (자동 증가)
     coupon_code VARCHAR(50) NOT NULL,   -- 발급된 쿠폰 코드 (UUID 기반 랜덤 코드)
-    issued_at TIMESTAMP NOT NULL DEFAULT NOW()  -- 발급 시각
+    issued_at   TIMESTAMP NOT NULL DEFAULT NOW(),  -- 발급 시각
+    expires_at  TIMESTAMP NOT NULL                 -- 만료 시각 (발급 후 15초)
 );
 
 -- 쿠폰 재고 테이블

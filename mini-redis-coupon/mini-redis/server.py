@@ -90,6 +90,18 @@ class MiniRedisStore:
             self._data[key] = str(new_value)
             return new_value
 
+    async def ttl(self, key: str) -> int:
+        """TTL 조회: 남은 초 반환. 키 없으면 -2, TTL 없으면 -1 (Redis 표준)."""
+        async with self._lock:
+            if key not in self._data or self._is_expired(key):
+                return -2
+            if key not in self._ttl:
+                return -1
+            remaining = self._ttl[key] - time.time()
+            if remaining <= 0:
+                return -2
+            return int(remaining)
+
     async def cleanup_expired(self):
         """백그라운드에서 만료된 키를 주기적으로 일괄 삭제한다."""
         async with self._lock:

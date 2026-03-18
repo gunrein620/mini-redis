@@ -14,7 +14,7 @@ import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import asyncpg
@@ -76,8 +76,10 @@ class CouponResponse(BaseModel):
     """쿠폰 1건 발급 요청의 결과."""
     success: bool
     message: str
+    user_id: Optional[int] = None       # DB에서 발급된 쿠폰의 고유 ID
     coupon_code: Optional[str] = None
     remaining: Optional[int] = None
+    expires_at: Optional[str] = None    # 만료 시각 (HH:MM:SS)
     elapsed_ms: float = 0
 
 
@@ -111,9 +113,14 @@ async def redis_get(key: str) -> Optional[str]:
     return await redis_store.get(key)
 
 
-async def redis_set(key: str, value: str):
-    """Mini Redis에 값 저장 (직접 호출)"""
-    await redis_store.set(key, value)
+async def redis_set(key: str, value: str, ttl: Optional[int] = None):
+    """Mini Redis에 값 저장 (직접 호출). ttl(초)을 주면 해당 시간 후 자동 만료."""
+    await redis_store.set(key, value, ttl)
+
+
+async def redis_ttl(key: str) -> int:
+    """Mini Redis 키의 남은 TTL(초) 반환. 없으면 -2, TTL 없으면 -1."""
+    return await redis_store.ttl(key)
 
 
 async def redis_decr(key: str) -> int:
@@ -150,19 +157,25 @@ async def issue_coupon_redis() -> CouponResponse:
                 elapsed_ms=round(elapsed, 2),
             )
 
-        # 3) 실제 발급 성공 건은 DB에 이력으로 남긴다.
+        # 3) 실제 발급 성공 건은 DB에 이력으로 남기고, Redis에 TTL 15초로 쿠폰 코드를 등록한다.
+        now = datetime.now()
+        expires = now.replace(microsecond=0) + timedelta(seconds=15)
         async with db_pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO coupons (coupon_code, issued_at) VALUES ($1, $2)",
-                coupon_code, datetime.now(),
+            row = await conn.fetchrow(
+                "INSERT INTO coupons (coupon_code, issued_at, expires_at) VALUES ($1, $2, $3) RETURNING id",
+                coupon_code, now, expires,
             )
+        # Redis에 coupon_code 키로 "valid" 저장 + TTL 15초 → 15초 후 자동 만료
+        await redis_set(coupon_code, "valid", ttl=15)
 
         elapsed = (time.perf_counter() - start) * 1000
         return CouponResponse(
             success=True,
             message="쿠폰이 발급되었습니다! (Redis)",
+            user_id=row["id"],
             coupon_code=coupon_code,
             remaining=remaining,
+            expires_at=expires.strftime("%H:%M:%S"),
             elapsed_ms=round(elapsed, 2),
         )
     except Exception as e:
@@ -199,18 +212,25 @@ async def issue_coupon_db() -> CouponResponse:
                     "UPDATE coupon_stock SET count = $1 WHERE id = 1", new_count
                 )
 
-                # 4) 발급 이력 저장
-                await conn.execute(
-                    "INSERT INTO coupons (coupon_code, issued_at) VALUES ($1, $2)",
-                    coupon_code, datetime.now(),
+                # 4) 발급 이력 저장. RETURNING id로 발급 ID를 받는다.
+                now = datetime.now()
+                expires = now.replace(microsecond=0) + timedelta(seconds=15)
+                issued = await conn.fetchrow(
+                    "INSERT INTO coupons (coupon_code, issued_at, expires_at) VALUES ($1, $2, $3) RETURNING id",
+                    coupon_code, now, expires,
                 )
+
+        # Redis에 coupon_code 키로 "valid" 저장 + TTL 15초
+        await redis_set(coupon_code, "valid", ttl=15)
 
         elapsed = (time.perf_counter() - start) * 1000
         return CouponResponse(
             success=True,
             message="쿠폰이 발급되었습니다! (DB)",
+            user_id=issued["id"],
             coupon_code=coupon_code,
             remaining=new_count,
+            expires_at=expires.strftime("%H:%M:%S"),
             elapsed_ms=round(elapsed, 2),
         )
     except HTTPException:
@@ -376,6 +396,34 @@ async def bulk_test() -> BulkTestResponse:
         db_error=d_error,
         db_elapsed_ms=round(db_elapsed, 2),
     )
+
+
+@app.get("/coupon/validate/{coupon_code}", summary="쿠폰 유효성 검증")
+async def validate_coupon(coupon_code: str):
+    """Redis TTL로 쿠폰 유효 여부를 확인한다.
+    - Redis에 키가 있으면 → 유효 (남은 초 반환)
+    - Redis에 없으면 → DB에서 만료 여부 확인
+    """
+    ttl = await redis_ttl(coupon_code)
+    if ttl >= 0:
+        return {"valid": True, "remaining_seconds": ttl, "source": "redis"}
+
+    # Redis에 없으면 DB에서 기록 확인 (만료됐거나 애초에 없는 쿠폰)
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT expires_at FROM coupons WHERE coupon_code = $1", coupon_code
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"검증 실패: {e}")
+
+    if row is None:
+        return {"valid": False, "reason": "존재하지 않는 쿠폰"}
+    return {
+        "valid": False,
+        "reason": "만료된 쿠폰",
+        "expired_at": row["expires_at"].strftime("%H:%M:%S"),
+    }
 
 
 @app.get("/health", summary="헬스 체크")

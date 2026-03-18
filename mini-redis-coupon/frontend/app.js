@@ -99,9 +99,12 @@ async function issueCouponRedis() {
         } else if (data.success) {
             showResult(`
                 <p class="result-success">✅ ${data.message}</p>
+                <p>사용자 ID: ${data.user_id}</p>
                 <p>쿠폰 코드: ${data.coupon_code}</p>
                 <p>남은 수량: ${data.remaining}개</p>
+                <p>⏰ 만료 시각: ${data.expires_at} <span style="color:#aaa;font-size:0.85em">(15초 유효)</span></p>
                 <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
+                <button class="btn" style="margin-top:8px" onclick="validateCoupon('${data.coupon_code}', this)">🔍 쿠폰 검증하기</button> <span id="validate-result"></span>
             `);
             addLog(`[Redis] 발급 성공 (${data.coupon_code})`, "success", data.elapsed_ms);
         } else {
@@ -139,9 +142,12 @@ async function issueCouponDB() {
         } else if (data.success) {
             showResult(`
                 <p class="result-success">✅ ${data.message}</p>
+                <p>사용자 ID: ${data.user_id}</p>
                 <p>쿠폰 코드: ${data.coupon_code}</p>
                 <p>남은 수량: ${data.remaining}개</p>
+                <p>⏰ 만료 시각: ${data.expires_at} <span style="color:#aaa;font-size:0.85em">(15초 유효)</span></p>
                 <p class="result-time">⏱ 처리 시간: ${data.elapsed_ms}ms</p>
+                <button class="btn" style="margin-top:8px" onclick="validateCoupon('${data.coupon_code}', this)">🔍 쿠폰 검증하기</button> <span id="validate-result"></span>
             `);
             addLog(`[DB] 발급 성공 (${data.coupon_code})`, "success", data.elapsed_ms);
         } else {
@@ -246,6 +252,33 @@ async function resetCoupon() {
 
     await refreshCount();
     setButtonsDisabled(false);
+}
+
+/**
+ * 사용자 액션 5) 쿠폰 검증
+ * Redis TTL로 쿠폰이 아직 유효한지 확인한다 (발급 후 15초 이내 여부).
+ * 버튼 옆 span에 결과를 간단히 표시한다.
+ */
+async function validateCoupon(couponCode, btn) {
+    const span = document.getElementById("validate-result");
+    if (!span) return;
+    span.textContent = "확인 중...";
+
+    try {
+        const res = await fetch(`${API_BASE}/coupon/validate/${couponCode}`);
+        const data = await res.json();
+
+        if (data.valid) {
+            span.style.color = "#4ade80";
+            span.textContent = `✅ 남은 시간: ${data.remaining_seconds}초`;
+        } else {
+            span.style.color = "#f87171";
+            span.textContent = `❌ ${data.reason}`;
+        }
+    } catch (e) {
+        span.style.color = "#f87171";
+        span.textContent = `❌ 검증 실패`;
+    }
 }
 
 // 페이지 시작 시 현재 재고를 먼저 보여준다.
