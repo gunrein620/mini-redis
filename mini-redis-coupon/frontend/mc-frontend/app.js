@@ -1,36 +1,8 @@
 const API_BASE = "http://localhost:8000";
 
-// 더미 데이터 (API 연동 전 테스트용)
-const DUMMY_DATA = {
-    "user01": {
-        success: true,
-        coupons: [
-            { user_id: "user01", coupon_code: "CPN-7A3F-X9K2", ttl: 120, initial_ttl: 300, label: "10% 할인 쿠폰" },
-            { user_id: "user01", coupon_code: "CPN-4D2E-R8T1", ttl: 200, initial_ttl: 300, label: "무료배송 쿠폰" },
-        ]
-    },
-    "user02": {
-        success: true,
-        coupons: [
-            { user_id: "user02", coupon_code: "CPN-2B8D-M4Q7", ttl: 15, initial_ttl: 300, label: "5000원 할인 쿠폰" },
-        ]
-    },
-    "user03": {
-        success: true,
-        coupons: [
-            { user_id: "user03", coupon_code: "CPN-9E1C-W6P0", ttl: 0, initial_ttl: 300, label: "신규가입 쿠폰" },
-        ]
-    },
-};
-const USE_DUMMY = true;
-
 // 쿠폰별 타이머/TTL 상태
-let couponTimers = {};  // { index: intervalId }
-let couponTtls = {};    // { index: { current, initial } }
-
-document.getElementById("user-id-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") searchCoupon();
-});
+let couponTimers = {};
+let couponTtls = {};
 
 // 파티클 효과
 function spawnParticles(x, y, color, count = 12) {
@@ -65,10 +37,13 @@ function clearAllTimers() {
     couponTtls = {};
 }
 
-async function searchCoupon() {
-    const userId = document.getElementById("user-id-input").value.trim();
-    if (!userId) return;
-
+/**
+ * 유효 쿠폰 조회
+ * 백엔드 GET /coupon/valid-coupons 호출
+ * 응답: { redis_coupons: [{id, coupon_code, remaining_seconds}], redis_count, redis_elapsed_ms,
+ *         db_coupons: [{id, coupon_code, expires_at}], db_count, db_elapsed_ms }
+ */
+async function fetchValidCoupons() {
     clearAllTimers();
     showSection("result");
 
@@ -85,81 +60,73 @@ async function searchCoupon() {
 
     document.getElementById("btn-search").disabled = true;
 
-    if (USE_DUMMY) {
-        await new Promise(r => setTimeout(r, 600));
-        const data = DUMMY_DATA[userId];
-        if (!data) {
-            showNoCoupon(userId);
+    try {
+        const res = await fetch(`${API_BASE}/coupon/valid-coupons`);
+        const data = await res.json();
+
+        // 비교 카드 표시
+        document.getElementById("compare-section").style.display = "block";
+        document.getElementById("redis-count").textContent = `${data.redis_count}장`;
+        document.getElementById("redis-elapsed").textContent = `${data.redis_elapsed_ms.toFixed(2)}ms`;
+        document.getElementById("db-count").textContent = `${data.db_count}장`;
+        document.getElementById("db-elapsed").textContent = `${data.db_elapsed_ms.toFixed(2)}ms`;
+
+        // Redis 쿠폰 기준으로 표시 (TTL 정보가 있으므로)
+        const redisCoupons = data.redis_coupons || [];
+
+        if (redisCoupons.length === 0) {
+            showNoCoupon();
         } else {
-            // TTL > 0 인 쿠폰만 필터
-            const activeCoupons = data.coupons.filter(c => c.ttl > 0);
-            if (activeCoupons.length === 0) {
-                showNoCoupon(userId);
-            } else {
-                renderCoupons(activeCoupons);
-            }
+            renderCoupons(redisCoupons);
         }
-    } else {
-        try {
-            const res = await fetch(`${API_BASE}/coupon/search?user_id=${encodeURIComponent(userId)}`);
-            const data = await res.json();
-
-            if (!data.success || !data.coupons || data.coupons.length === 0) {
-                showNoCoupon(userId);
-                document.getElementById("btn-search").disabled = false;
-                return;
-            }
-
-            const activeCoupons = data.coupons.filter(c => c.ttl > 0);
-            if (activeCoupons.length === 0) {
-                showNoCoupon(userId);
-            } else {
-                renderCoupons(activeCoupons);
-            }
-        } catch (e) {
-            document.getElementById("result-area").innerHTML = `
-                <div class="flex flex-col items-center py-20 animate-fade-up">
-                    <div class="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-5">
-                        <span class="text-2xl">😵</span>
-                    </div>
-                    <p class="text-sm text-white/40 text-center leading-relaxed">
-                        서버에 연결할 수 없어요<br>잠시 후 다시 시도해주세요
-                    </p>
+    } catch (e) {
+        document.getElementById("compare-section").style.display = "none";
+        document.getElementById("result-area").innerHTML = `
+            <div class="flex flex-col items-center py-20 animate-fade-up">
+                <div class="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-5">
+                    <span class="text-2xl">😵</span>
                 </div>
-            `;
-        }
+                <p class="text-sm text-white/40 text-center leading-relaxed">
+                    서버에 연결할 수 없어요<br>
+                    <span class="text-white/25 text-xs">백엔드 서버(localhost:8000)가 실행 중인지 확인해주세요</span>
+                </p>
+            </div>
+        `;
     }
 
     document.getElementById("btn-search").disabled = false;
 }
 
+/**
+ * 쿠폰 카드 렌더링
+ * redis_coupons: [{ id, coupon_code, remaining_seconds }]
+ */
 function renderCoupons(coupons) {
-    // 쿠폰 개수 표시 + 카드 리스트
     let html = `
         <div class="flex items-center justify-between mb-5 animate-fade-up">
             <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold text-white/70">조회 결과</span>
+                <span class="text-sm font-semibold text-white/70">Redis 유효 쿠폰</span>
                 <span class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-violet-500/15 text-violet-400 border border-violet-500/20">${coupons.length}장</span>
             </div>
+            <span class="text-[11px] text-white/20">TTL 실시간 카운트다운</span>
         </div>
         <div class="flex flex-col gap-5">
     `;
 
     coupons.forEach((coupon, idx) => {
-        const ttl = coupon.ttl;
-        const initTtl = coupon.initial_ttl || ttl;
-        const ratio = initTtl > 0 ? (ttl / initTtl) : 0;
+        const ttl = coupon.remaining_seconds;
+        const initTtl = 15;
+        const ratio = initTtl > 0 ? Math.min(ttl / initTtl, 1) : 0;
 
-        couponTtls[idx] = { current: ttl, initial: initTtl };
+        couponTtls[idx] = { current: ttl, initial: initTtl, coupon_code: coupon.coupon_code };
 
         const strokeColor = ratio <= 0.2 ? '#ef4444' : ratio <= 0.5 ? '#f59e0b' : '#8b5cf6';
         const circumference = 2 * Math.PI * 42;
         const dashoffset = circumference * (1 - ratio);
 
         html += `
-        <div class="animate-fade-up" style="animation-delay: ${idx * 0.1}s;">
+        <div class="animate-fade-up" style="animation-delay: ${idx * 0.08}s;">
             <div id="coupon-card-${idx}" class="relative rounded-3xl glass overflow-hidden group hover:border-white/[0.12] transition-all duration-500">
-                <!-- 상단 글로우 라인 -->
                 <div class="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-violet-500/40 to-transparent"></div>
 
                 <div class="flex items-stretch">
@@ -180,7 +147,7 @@ function renderCoupons(coupons) {
                         </div>
                     </div>
 
-                    <!-- 구분선 (세로 점선 + 노치) -->
+                    <!-- 구분선 -->
                     <div class="relative w-0 flex-shrink-0">
                         <div class="absolute top-4 bottom-4 left-0 border-l border-dashed border-white/[0.06]"></div>
                         <div class="coupon-notch-left" style="top: -12px;"></div>
@@ -190,11 +157,14 @@ function renderCoupons(coupons) {
                     <!-- 오른쪽: 쿠폰 정보 -->
                     <div class="flex-1 p-5 pl-7 flex flex-col justify-between min-h-[140px]">
                         <div>
-                            <p class="text-[10px] font-semibold tracking-[0.15em] uppercase text-violet-400/60 mb-1">${escapeHtml(coupon.label || '선착순 쿠폰')}</p>
+                            <p class="text-[10px] font-semibold tracking-[0.15em] uppercase text-violet-400/60 mb-1">선착순 쿠폰</p>
                             <p class="text-base font-bold text-white/90 tracking-wider font-mono">${escapeHtml(coupon.coupon_code)}</p>
+                            <p class="text-[11px] text-white/20 mt-1 font-mono">ID: ${coupon.id}</p>
                         </div>
                         <div class="flex items-center justify-between mt-3">
-                            <span class="text-[11px] text-white/25">${escapeHtml(coupon.user_id)}</span>
+                            <span id="status-text-${idx}" class="text-[11px] ${ttl > 0 ? 'text-emerald-400/60' : 'text-red-400/60'}">
+                                ${ttl > 0 ? '● 유효' : '● 만료'}
+                            </span>
                             <button id="btn-use-${idx}"
                                     onclick="useCoupon(${idx}, event)"
                                     class="text-[11px] font-semibold px-4 py-2 rounded-xl
@@ -213,8 +183,9 @@ function renderCoupons(coupons) {
         </div>
         `;
 
-        // 각 쿠폰별 타이머 시작
-        startCouponTimer(idx);
+        if (ttl > 0) {
+            startCouponTimer(idx);
+        }
     });
 
     html += `</div>`;
@@ -234,7 +205,6 @@ function startCouponTimer(idx) {
             delete couponTimers[idx];
             couponTtls[idx].current = 0;
 
-            // 만료 표시
             const textEl = document.getElementById(`timer-text-${idx}`);
             if (textEl) {
                 textEl.textContent = "만료";
@@ -245,10 +215,15 @@ function startCouponTimer(idx) {
                 circleEl.style.strokeDashoffset = circumference;
                 circleEl.style.stroke = '#ef4444';
             }
+            const statusEl = document.getElementById(`status-text-${idx}`);
+            if (statusEl) {
+                statusEl.textContent = "● 만료";
+                statusEl.className = "text-[11px] text-red-400/60";
+            }
             return;
         }
 
-        const ratio = current / initial;
+        const ratio = Math.min(current / initial, 1);
         const strokeColor = ratio <= 0.2 ? '#ef4444' : ratio <= 0.5 ? '#f59e0b' : '#8b5cf6';
         const dashoffset = circumference * (1 - ratio);
 
@@ -264,21 +239,47 @@ function startCouponTimer(idx) {
     }, 1000);
 }
 
-function useCoupon(idx, event) {
+/**
+ * 사용하기 버튼 클릭
+ * 백엔드 GET /coupon/validate/{coupon_code} 호출
+ */
+async function useCoupon(idx, event) {
     const ttlData = couponTtls[idx];
     if (!ttlData) return;
 
-    if (ttlData.current > 0) {
-        // 파티클!
-        const rect = event.target.getBoundingClientRect();
-        spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, '#34d399', 15);
-        showModal("success");
-    } else {
-        showModal("fail", idx);
+    const couponCode = ttlData.coupon_code;
+    const btn = document.getElementById(`btn-use-${idx}`);
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "확인 중...";
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/coupon/validate/${encodeURIComponent(couponCode)}`);
+        const data = await res.json();
+
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = "사용하기";
+        }
+
+        if (data.valid) {
+            const rect = event.target.getBoundingClientRect();
+            spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, '#34d399', 15);
+            showModal("success", null, `남은 시간: ${data.remaining_seconds}초 (${data.source})`);
+        } else {
+            showModal("fail", idx, data.reason || "만료된 쿠폰입니다");
+        }
+    } catch (e) {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = "사용하기";
+        }
+        showModal("fail", idx, "서버 연결 실패");
     }
 }
 
-function showModal(type, failIdx) {
+function showModal(type, failIdx, detail) {
     const overlay = document.getElementById("modal-overlay");
     const icon = document.getElementById("modal-icon");
     const title = document.getElementById("modal-title");
@@ -289,18 +290,18 @@ function showModal(type, failIdx) {
         icon.textContent = "🎉";
         title.textContent = "사용 가능합니다!";
         title.className = "text-xl font-bold text-emerald-400 mb-2";
-        desc.textContent = "이 쿠폰은 현재 사용 가능한 상태입니다.";
+        desc.textContent = detail || "이 쿠폰은 현재 사용 가능한 상태입니다.";
     } else {
         icon.className = "w-20 h-20 mx-auto mb-6 rounded-2xl flex items-center justify-center text-4xl bg-red-500/15 border border-red-500/20";
         icon.textContent = "😢";
         title.textContent = "사용 불가능합니다";
         title.className = "text-xl font-bold text-red-400 mb-2";
-        desc.textContent = "유효시간이 만료되어 사용할 수 없습니다.";
+        desc.textContent = detail || "유효시간이 만료되어 사용할 수 없습니다.";
     }
 
     overlay.style.display = "flex";
     overlay.dataset.type = type;
-    overlay.dataset.failIdx = failIdx !== undefined ? failIdx : "";
+    overlay.dataset.failIdx = failIdx !== null && failIdx !== undefined ? failIdx : "";
 }
 
 function closeModal() {
@@ -309,13 +310,10 @@ function closeModal() {
     const failIdx = overlay.dataset.failIdx;
     overlay.style.display = "none";
 
-    if (type === "success") {
-        // 모달만 닫고 아무 일도 안 함
-    } else if (type === "fail" && failIdx !== "") {
-        // 만료 쿠폰 카드 사라짐
+    if (type === "fail" && failIdx !== "") {
         const card = document.getElementById(`coupon-card-${failIdx}`);
         if (card) {
-            card.style.transition = "opacity 0.5s ease, transform 0.5s ease, max-height 0.5s ease";
+            card.style.transition = "opacity 0.5s ease, transform 0.5s ease";
             card.style.opacity = "0";
             card.style.transform = "scale(0.95) translateX(20px)";
             setTimeout(() => {
@@ -329,7 +327,6 @@ function closeModal() {
                     setTimeout(() => wrapper.remove(), 300);
                 }
 
-                // 남은 카드 없으면 메시지
                 const remaining = document.querySelectorAll('[id^="coupon-card-"]');
                 if (remaining.length === 0) {
                     document.getElementById("result-area").innerHTML = `
@@ -356,7 +353,7 @@ function formatTtlShort(seconds) {
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function showNoCoupon(userId) {
+function showNoCoupon() {
     document.getElementById("result-area").innerHTML = `
         <div class="flex flex-col items-center py-20 animate-fade-up">
             <div class="animate-float">
@@ -365,7 +362,8 @@ function showNoCoupon(userId) {
                 </div>
             </div>
             <p class="text-sm text-white/40 text-center leading-relaxed mt-3">
-                <strong class="text-white/60">${escapeHtml(userId)}</strong> 님에게<br>발급된 쿠폰이 없어요
+                현재 유효한 쿠폰이 없어요<br>
+                <span class="text-white/25 text-xs">메인 페이지에서 쿠폰을 발급해주세요</span>
             </p>
         </div>
     `;
