@@ -349,14 +349,6 @@ function closeModal() {
     }
 }
 
-function formatTtl(seconds) {
-    if (seconds <= 0) return "만료됨";
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    if (m > 0) return `${m}분 ${s}초`;
-    return `${s}초`;
-}
-
 function formatTtlShort(seconds) {
     if (seconds <= 0) return "0:00";
     const m = Math.floor(seconds / 60);
