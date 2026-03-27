@@ -52,6 +52,11 @@ cd mini-redis-coupon
 ./start.sh
 ```
 
+```cmd(윈도우)
+cd mini-redis-coupon
+./start-windows.cmd
+```
+
 ## 서버 실행 방법 (터미널 3개)
 
 ### 터미널 1: Mini Redis 서버 (포트 6379)
